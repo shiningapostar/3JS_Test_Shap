@@ -88,13 +88,16 @@ function updateMesh() {
   };
 
   const boxGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  const texture = new THREE.TextureLoader().load("/beuk_2.jpg");
+  const texture = new THREE.TextureLoader().load("/3.jpg");
+  texture.repeat.set(1, 0.1);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
   texture.colorSpace = THREE.SRGBColorSpace;
 
   const boxMat = new THREE.MeshStandardMaterial({
     map: texture,
     metalness: 0.2,
-    roughness: 0.1,
+    roughness: 0.5,
   });
 
   box = new Brush(boxGeo, boxMat);
