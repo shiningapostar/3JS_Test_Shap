@@ -13,58 +13,815 @@
       body {
         margin: 0;
       }
+
+      #scene-container {
+        width: 100vw !important;
+        height: 100vh !important;
+      }
     </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.148.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
   </head>
   <body>
-    <div class="d-flex min-vh-100">
-      <div id="three-container" class="w-50"></div>
+    <div id="scene-container" style="width: 100%; height: 100%"></div>
 
-      <div class="flex-1 p-3 w-50 container">
-        <!-- Dimensions Section -->
-        <div class="mb-3">
-          <label class="form-label fw-bold">Dimensions</label>
-          <div class="row g-2">
-            <div class="col">
-              <input
-                id="widthInput"
-                type="text"
-                class="form-control"
-                placeholder="600"
-                value="600"
-              />
-            </div>
-            <div class="col">
-              <input
-                id="lengthInput"
-                type="text"
-                class="form-control"
-                placeholder="1500"
-                value="1500"
-              />
-            </div>
-            <div class="col">
-              <select id="depthSelect" class="form-select">
-                <option selected>25mm</option>
-                <option>20mm</option>
-                <option>15mm</option>
-              </select>
-            </div>
-          </div>
-        </div>
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-        <hr />
+      // Create a global model module using an immediately invoked function expression (IIFE)
+      const BoxModel = (function () {
+        // Private variables
+        let scene, camera, renderer, controls, geometry, cube;
+        let dims = { length: 1500, width: 600, thickness: 25 };
+        const isNum = (v) => !isNaN(parseFloat(v)) && isFinite(v);
+        let materials = Array(6)
+          .fill()
+          .map(() => new THREE.MeshBasicMaterial({ color: 0xcccccc }));
+        let discs = [];
 
-        <!-- Cutout Holes Section -->
-        <div class="mt-4">
-          <label class="form-label fw-bold">Cutout Holes</label>
-          <div id="cutout-list"></div>
-          <button id="add-cutout" class="mt-2 btn btn-primary">
-            Add Cutout
-          </button>
-        </div>
-      </div>
-    </div>
+        // Initialize when DOM is ready
+        function init() {
+          // Setup scene
+          scene = new THREE.Scene();
 
-    <script type="module" src="/main.js"></script>
+          // Get container and its dimensions
+          const container = document.getElementById("scene-container");
+          const w = container.clientWidth,
+            h = container.clientHeight;
+
+          // Setup camera
+          camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 10000);
+          camera.position.set(0, 0, 2000);
+
+          // Setup renderer
+          renderer = new THREE.WebGLRenderer({ antialias: true });
+          renderer.setClearColor(0x000000, 0);
+          renderer.setPixelRatio(2);
+          renderer.setSize(w, h);
+          container.appendChild(renderer.domElement);
+
+          // Setup controls
+          controls = new OrbitControls(camera, renderer.domElement);
+          controls.enableZoom = false;
+          controls.enablePan = false;
+          controls.enableDamping = true;
+          controls.dampingFactor = 0.05;
+          controls.target.set(0, 0, 0);
+          controls.minDistance = 500;
+          controls.maxDistance = 5000;
+          camera.lookAt(0, 0, 0);
+          controls.update();
+
+          // Create initial box with placeholder materials
+          createBox(materials);
+
+          // Load textures and set up event listeners
+          loadInitialTextures();
+          setupEventListeners();
+
+          // Start animation immediately (will render with placeholder materials until textures load)
+          animate();
+        }
+
+        // Define face keys - this ensures consistency across the application
+        const FACES = {
+          RIGHT: "right",
+          LEFT: "left",
+          TOP: "top",
+          BOTTOM: "bottom",
+          FRONT: "front",
+          BACK: "back",
+        };
+
+        // Mapping between face keys and BoxGeometry indices
+        const faceKeyToIndex = {
+          [FACES.RIGHT]: 0, // +X
+          [FACES.LEFT]: 1, // -X
+          [FACES.TOP]: 2, // +Y
+          [FACES.BOTTOM]: 3, // -Y
+          [FACES.FRONT]: 4, // +Z
+          [FACES.BACK]: 5, // -Z
+        };
+
+        // Mapping between BoxGeometry indices and face keys
+        const faceIndexToKey = {
+          0: FACES.RIGHT,
+          1: FACES.LEFT,
+          2: FACES.TOP,
+          3: FACES.BOTTOM,
+          4: FACES.FRONT,
+          5: FACES.BACK,
+        };
+
+        // Load initial textures
+        function loadInitialTextures() {
+          // Map faces to texture paths - ensures textures are applied to correct faces
+          const texturePaths = {
+            [FACES.RIGHT]: "/face1.jpg", // Right face (+X)
+            [FACES.LEFT]: "/face1.jpg", // Left face (-X)
+            [FACES.TOP]: "/face1.jpg", // Top face (+Y)
+            [FACES.BOTTOM]: "/face1.jpg", // Bottom face (-Y)
+            [FACES.FRONT]: "/face1.jpg", // Front face (+Z)
+            [FACES.BACK]: "/face1.jpg", // Back face (-Z)
+          };
+
+          // Face labels in the same order as THREE.js BoxGeometry faces
+          const faceLabels = [
+            "Right",
+            "Left",
+            "Top",
+            "Bottom",
+            "Front",
+            "Back",
+          ];
+
+          // Add initial labels with placeholder materials
+          addLabelsToBox(faceLabels);
+          updateCameraPosition(true);
+
+          // Create a counter to track loaded textures
+          let loadedCount = 0;
+          const totalTextures = Object.keys(texturePaths).length;
+
+          // Load each texture using updateFaceTexture
+          Object.entries(texturePaths).forEach(([faceKey, path]) => {
+            updateFaceTexture(faceKey, path, () => {
+              loadedCount++;
+
+              // When all textures are loaded, make sure everything is updated
+              if (loadedCount === totalTextures) {
+                if (cube) cube.rotation.set(0, 0, 0);
+                updateCameraPosition(true);
+              }
+            });
+          });
+        }
+
+        // Then replace the addThickCircle function with this implementation:
+        function addThickCircle(radius, thickness, options = {}) {
+          // Default options for positioning
+          const defaults = {
+            face: FACES.FRONT, // Default face to place the circle on
+            topMM: 0, // Distance from top edge in millimeters
+            leftMM: 0, // Distance from left edge in millimeters
+            zOffset: 0, // Offset from the face surface
+            color: Math.random() * 0xffffff,
+            opacity: 0.7,
+          };
+
+          // Merge provided options with defaults
+          const config = { ...defaults, ...options };
+
+          // Create a cylinder geometry with equal top and bottom radius
+          const discGeometry = new THREE.CylinderGeometry(
+            radius, // radiusTop
+            radius, // radiusBottom
+            thickness, // height (thickness)
+            32, // radialSegments
+            1, // heightSegments
+            false // openEnded
+          );
+
+          // Create a material
+          const discMaterial = new THREE.MeshPhongMaterial({
+            color: config.color,
+            transparent: true,
+            opacity: config.opacity,
+          });
+
+          // Create the mesh
+          const discMesh = new THREE.Mesh(discGeometry, discMaterial);
+
+          // Calculate position based on face, millimeter coordinates, and dimensions
+          const position = [0, 0, 0];
+
+          // Get current dimensions
+          const { length, width, thickness: boxThickness } = dims;
+
+          // Calculate actual position based on face and millimeter measurements
+          switch (config.face) {
+            case FACES.FRONT: // +Z
+              // For front face: origin at top-left, X increases right, Y increases down
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = boxThickness / 2 + config.zOffset;
+              discMesh.rotation.x = Math.PI / 2;
+              break;
+
+            case FACES.BACK: // -Z
+              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
+              position[0] = width / 2 - config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = -boxThickness / 2 - config.zOffset;
+              discMesh.rotation.x = -Math.PI / 2;
+              break;
+
+            case FACES.RIGHT: // +X
+              // For right face: origin at top-front, X increases toward back, Y increases down
+              position[0] = width / 2 + config.zOffset;
+              position[1] = length / 2 - config.topMM;
+              position[2] = boxThickness / 2 - config.leftMM;
+              discMesh.rotation.z = Math.PI / 2;
+              break;
+
+            case FACES.LEFT: // -X
+              // For left face: origin at top-back, X increases toward front, Y increases down
+              position[0] = -width / 2 - config.zOffset;
+              position[1] = length / 2 - config.topMM;
+              position[2] = -boxThickness / 2 + config.leftMM;
+              discMesh.rotation.z = -Math.PI / 2;
+              break;
+
+            case FACES.TOP: // +Y
+              // For top face: origin at back-left, X increases right, Y increases forward
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = length / 2 + config.zOffset;
+              position[2] = -boxThickness / 2 + config.topMM;
+              // Default rotation works for top face
+              break;
+
+            case FACES.BOTTOM: // -Y
+              // For bottom face: origin at front-left, X increases right, Y increases backward
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = -length / 2 - config.zOffset;
+              position[2] = boxThickness / 2 - config.topMM;
+              discMesh.rotation.x = Math.PI;
+              break;
+          }
+
+          // Set position
+          discMesh.position.set(...position);
+
+          // Add to scene
+          scene.add(discMesh);
+
+          // Store the disc for later reference
+          const discId =
+            Date.now().toString() + Math.random().toString(36).substr(2, 9);
+          discs.push({
+            id: discId,
+            mesh: discMesh,
+            face: config.face,
+            topMM: config.topMM,
+            leftMM: config.leftMM,
+          });
+
+          // Render the scene
+          renderer.render(scene, camera);
+
+          // Return the disc's ID so it can be removed later
+          return discId;
+        }
+
+        function editThickCircle(discId, options = {}) {
+          // Find the disc by ID
+          const discIndex = discs.findIndex((disc) => disc.id === discId);
+
+          if (discIndex === -1) {
+            console.error(`Disc with ID ${discId} not found.`);
+            return false;
+          }
+
+          const disc = discs[discIndex];
+          const discMesh = disc.mesh;
+
+          // Update properties based on provided options
+          if (options.radius !== undefined) {
+            // Update the geometry with a new radius
+            const oldGeometry = discMesh.geometry;
+            const newGeometry = new THREE.CylinderGeometry(
+              options.radius, // radiusTop
+              options.radius, // radiusBottom
+              oldGeometry.parameters.height, // keep the same thickness
+              32, // radialSegments
+              1, // heightSegments
+              false // openEnded
+            );
+
+            discMesh.geometry.dispose();
+            discMesh.geometry = newGeometry;
+          }
+
+          if (options.thickness !== undefined) {
+            // Update the geometry with a new thickness
+            const oldGeometry = discMesh.geometry;
+            const newGeometry = new THREE.CylinderGeometry(
+              oldGeometry.parameters.radiusTop, // keep the same radius
+              oldGeometry.parameters.radiusBottom,
+              options.thickness, // new thickness
+              32, // radialSegments
+              1, // heightSegments
+              false // openEnded
+            );
+
+            discMesh.geometry.dispose();
+            discMesh.geometry = newGeometry;
+          }
+
+          // Update material properties
+          if (options.color !== undefined) {
+            discMesh.material.color.set(options.color);
+          }
+
+          if (options.opacity !== undefined) {
+            discMesh.material.opacity = options.opacity;
+            // Ensure transparency is enabled if opacity < 1
+            discMesh.material.transparent = options.opacity < 1;
+          }
+
+          // Update position if topMM or leftMM changed
+          const positionChanged =
+            options.topMM !== undefined || options.leftMM !== undefined;
+          if (positionChanged) {
+            // Get current dimensions
+            const { length, width, thickness: boxThickness } = dims;
+
+            // Get the face from the disc object or use the provided face
+            const face = options.face || disc.face;
+
+            // Update the disc's stored values
+            if (options.topMM !== undefined) {
+              disc.topMM = options.topMM;
+            }
+
+            if (options.leftMM !== undefined) {
+              disc.leftMM = options.leftMM;
+            }
+
+            if (options.face !== undefined) {
+              disc.face = options.face;
+
+              // Reset rotation based on the new face
+              discMesh.rotation.set(0, 0, 0);
+
+              switch (options.face) {
+                case FACES.FRONT:
+                  discMesh.rotation.x = Math.PI / 2;
+                  break;
+                case FACES.BACK:
+                  discMesh.rotation.x = -Math.PI / 2;
+                  break;
+                case FACES.RIGHT:
+                  discMesh.rotation.z = Math.PI / 2;
+                  break;
+                case FACES.LEFT:
+                  discMesh.rotation.z = -Math.PI / 2;
+                  break;
+                case FACES.TOP:
+                  // Default rotation works for top face
+                  break;
+                case FACES.BOTTOM:
+                  discMesh.rotation.x = Math.PI;
+                  break;
+              }
+            }
+
+            // Calculate new position
+            const position = [0, 0, 0];
+            const zOffset =
+              options.zOffset !== undefined
+                ? options.zOffset
+                : discMesh.position.y - length / 2 > 0
+                ? discMesh.position.y - length / 2
+                : 0;
+
+            switch (disc.face) {
+              case FACES.FRONT:
+                position[0] = -width / 2 + disc.leftMM;
+                position[1] = length / 2 - disc.topMM;
+                position[2] = boxThickness / 2 + zOffset;
+                break;
+              case FACES.BACK:
+                position[0] = width / 2 - disc.leftMM;
+                position[1] = length / 2 - disc.topMM;
+                position[2] = -boxThickness / 2 - zOffset;
+                break;
+              case FACES.RIGHT:
+                position[0] = width / 2 + zOffset;
+                position[1] = length / 2 - disc.topMM;
+                position[2] = boxThickness / 2 - disc.leftMM;
+                break;
+              case FACES.LEFT:
+                position[0] = -width / 2 - zOffset;
+                position[1] = length / 2 - disc.topMM;
+                position[2] = -boxThickness / 2 + disc.leftMM;
+                break;
+              case FACES.TOP:
+                position[0] = -width / 2 + disc.leftMM;
+                position[1] = length / 2 + zOffset;
+                position[2] = -boxThickness / 2 + disc.topMM;
+                break;
+              case FACES.BOTTOM:
+                position[0] = -width / 2 + disc.leftMM;
+                position[1] = -length / 2 - zOffset;
+                position[2] = boxThickness / 2 - disc.topMM;
+                break;
+            }
+
+            // Update position
+            discMesh.position.set(...position);
+          }
+
+          // Render the scene
+          renderer.render(scene, camera);
+
+          return true;
+        }
+
+        function deleteThickCircle(discId) {
+          // Find the disc by ID
+          const discIndex = discs.findIndex((disc) => disc.id === discId);
+
+          if (discIndex === -1) {
+            console.error(`Disc with ID ${discId} not found.`);
+            return false;
+          }
+
+          // Get the disc and its mesh
+          const disc = discs[discIndex];
+          const discMesh = disc.mesh;
+
+          // Remove the mesh from the scene
+          scene.remove(discMesh);
+
+          // Properly dispose of resources
+          if (discMesh.geometry) discMesh.geometry.dispose();
+          if (discMesh.material) {
+            if (Array.isArray(discMesh.material)) {
+              discMesh.material.forEach((material) => material.dispose());
+            } else {
+              discMesh.material.dispose();
+            }
+          }
+
+          // Remove the disc from the discs array
+          discs.splice(discIndex, 1);
+
+          // Render the scene to update the view
+          renderer.render(scene, camera);
+
+          return true;
+        }
+
+        // Create box with materials
+        function createBox(materials) {
+          if (cube) {
+            scene.remove(cube);
+            if (cube.userData.labelGroup) {
+              scene.remove(cube.userData.labelGroup);
+            }
+            if (geometry) {
+              geometry.dispose();
+            }
+          }
+
+          // BoxGeometry creates faces in this order:
+          // 0: positive-x (right)
+          // 1: negative-x (left)
+          // 2: positive-y (top)
+          // 3: negative-y (bottom)
+          // 4: positive-z (front)
+          // 5: negative-z (back)
+          geometry = new THREE.BoxGeometry(
+            dims.width,
+            dims.length,
+            dims.thickness
+          );
+
+          // Verify materials array matches the number of faces
+          const materialArray = Array.isArray(materials)
+            ? materials.length >= 6
+              ? materials
+              : Array(6).fill(
+                  materials[0] ||
+                    new THREE.MeshBasicMaterial({ color: 0xcccccc })
+                )
+            : Array(6).fill(
+                materials || new THREE.MeshBasicMaterial({ color: 0xcccccc })
+              );
+
+          cube = new THREE.Mesh(geometry, materialArray);
+          cube.position.set(0, 0, 0);
+          cube.rotation.set(0, 0, 0);
+          cube.userData.initialRotationApplied = true;
+          scene.add(cube);
+          return cube;
+        }
+
+        // Change model size
+        function changeModelSize(
+          newLength,
+          newWidth,
+          newThickness,
+          updateLabels = true
+        ) {
+          newLength = isNum(newLength) ? newLength : dims.length;
+          newWidth = isNum(newWidth) ? newWidth : dims.width;
+          newThickness = isNum(newThickness) ? newThickness : dims.thickness;
+
+          dims = {
+            length: newLength,
+            width: newWidth,
+            thickness: newThickness,
+          };
+
+          createBox(materials);
+
+          if (updateLabels) {
+            addLabelsToBox(["Right", "Left", "Top", "Bottom", "Front", "Back"]);
+          }
+
+          updateCameraPosition(true);
+          return cube;
+        }
+
+        // Update face texture using string key
+        function updateFaceTexture(faceKey, texturePath, callback) {
+          // Validate face key
+          if (!Object.values(FACES).includes(faceKey)) {
+            console.error(
+              `Invalid face key: "${faceKey}". Must be one of: ${Object.values(
+                FACES
+              ).join(", ")}`
+            );
+            return;
+          }
+
+          // Convert face key to index for THREE.js BoxGeometry
+          const faceIndex = faceKeyToIndex[faceKey];
+
+          // Get human-readable face name for logging
+          const faceName = faceKey.charAt(0).toUpperCase() + faceKey.slice(1);
+
+          const loader = new THREE.TextureLoader();
+          loader.load(
+            texturePath,
+            (texture) => {
+              texture.generateMipmaps = true;
+              texture.minFilter = THREE.LinearMipmapLinearFilter;
+              texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+              const newMaterial = new THREE.MeshBasicMaterial({ map: texture });
+              materials[faceIndex] = newMaterial;
+
+              if (cube && cube.material) {
+                if (Array.isArray(cube.material)) {
+                  cube.material[faceIndex] = newMaterial;
+                  cube.material.needsUpdate = true;
+                } else {
+                  createBox(materials);
+                  addLabelsToBox();
+                }
+              }
+
+              renderer.render(scene, camera);
+
+              if (callback && typeof callback === "function") {
+                callback(newMaterial);
+              }
+            },
+            undefined,
+            (error) => {
+              // Use a fallback color if texture fails to load
+              materials[faceIndex] = new THREE.MeshBasicMaterial({
+                color: Math.random() * 0xffffff,
+              });
+
+              if (cube && cube.material) {
+                if (Array.isArray(cube.material)) {
+                  cube.material[faceIndex] = materials[faceIndex];
+                  cube.material.needsUpdate = true;
+                }
+              }
+
+              if (callback && typeof callback === "function") {
+                callback(materials[faceIndex]);
+              }
+            }
+          );
+        }
+
+        // Add labels to box - maps directly to BoxGeometry face indices
+        function addLabelsToBox(
+          labelTexts = ["Right", "Left", "Top", "Bottom", "Front", "Back"]
+        ) {
+          if (!cube) return;
+
+          if (cube.userData.labelGroup) {
+            scene.remove(cube.userData.labelGroup);
+          }
+
+          const labelGroup = new THREE.Group();
+          cube.userData.labelGroup = labelGroup;
+          scene.add(labelGroup);
+
+          const labelOffset = 150;
+
+          // This array MUST follow the same order as THREE.BoxGeometry faces
+          // BoxGeometry creates faces in this order: +x, -x, +y, -y, +z, -z
+          const labelPositions = [
+            { faceKey: FACES.RIGHT, axis: "x", sign: 1, defaultText: "Right" }, // Right (+X) = index 0
+            { faceKey: FACES.LEFT, axis: "x", sign: -1, defaultText: "Left" }, // Left (-X) = index 1
+            { faceKey: FACES.TOP, axis: "y", sign: 1, defaultText: "Top" }, // Top (+Y) = index 2
+            {
+              faceKey: FACES.BOTTOM,
+              axis: "y",
+              sign: -1,
+              defaultText: "Bottom",
+            }, // Bottom (-Y) = index 3
+            { faceKey: FACES.FRONT, axis: "z", sign: 1, defaultText: "Front" }, // Front (+Z) = index 4
+            { faceKey: FACES.BACK, axis: "z", sign: -1, defaultText: "Back" }, // Back (-Z) = index 5
+          ];
+
+          labelPositions.forEach((item, index) => {
+            if (index >= 6) return;
+
+            // Override default text if provided
+            const text =
+              index < labelTexts.length ? labelTexts[index] : item.defaultText;
+
+            // Create position and face point vectors
+            const position = [0, 0, 0];
+            const facePoint = [0, 0, 0];
+
+            // Set the appropriate dimension based on axis
+            const dimValue =
+              item.axis === "x"
+                ? dims.width / 2
+                : item.axis === "y"
+                ? dims.length / 2
+                : dims.thickness / 2;
+
+            // Determine position index based on axis (x=0, y=1, z=2)
+            const posIndex = item.axis === "x" ? 0 : item.axis === "y" ? 1 : 2;
+
+            position[posIndex] = dimValue * item.sign + labelOffset * item.sign;
+            facePoint[posIndex] = dimValue * item.sign;
+
+            createLabel(text, position, facePoint, labelGroup);
+          });
+
+          return labelGroup;
+        }
+
+        // Create label
+        function createLabel(text, position, facePoint, parentGroup) {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          canvas.width = 256;
+          canvas.height = 256;
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.font = "Bold 50px Arial";
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          context.strokeStyle = "white";
+          context.lineWidth = 1;
+          context.strokeText(text, canvas.width / 2, canvas.height / 2);
+          context.fillStyle = "black";
+          context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+          const texture = new THREE.CanvasTexture(canvas);
+          const spriteMaterial = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+          });
+
+          const sprite = new THREE.Sprite(spriteMaterial);
+          sprite.position.set(...position);
+          const maxDim = Math.max(dims.width, dims.length, dims.thickness);
+          const scaleFactor = maxDim / 10;
+          sprite.scale.set(scaleFactor, scaleFactor, 1);
+          parentGroup.add(sprite);
+
+          const lineMaterial = new THREE.LineDashedMaterial({
+            color: 0x000000,
+            linewidth: 1,
+            opacity: 0.5,
+            transparent: true,
+            dashSize: 3,
+            gapSize: 15,
+          });
+
+          const points = [
+            new THREE.Vector3(...facePoint),
+            new THREE.Vector3(...position),
+          ];
+
+          const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+          const line = new THREE.Line(lineGeometry, lineMaterial);
+          line.computeLineDistances();
+          parentGroup.add(line);
+
+          return sprite;
+        }
+
+        // Update camera position
+        function updateCameraPosition(forceUpdate = false) {
+          if (!cube) return;
+
+          // Calculate object size and optimal camera distance
+          const calculateOptimalDistance = () => {
+            const size = new THREE.Vector3();
+            new THREE.Box3().setFromObject(cube).getSize(size);
+
+            const container = document.getElementById("scene-container");
+            const containerAspect =
+              container.clientWidth / container.clientHeight;
+            const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+            const halfFovTan = Math.tan(halfFov);
+
+            // Calculate constraints for width, height, and diagonal
+            const halfWidth = size.x / 2;
+            const halfHeight = size.y / 2;
+            const widthConstraint = halfWidth / (halfFovTan * containerAspect);
+            const heightConstraint = halfHeight / halfFovTan;
+            const diagonalSquared =
+              halfWidth * halfWidth + halfHeight * halfHeight;
+            const diagonalConstraint = Math.sqrt(diagonalSquared) / halfFovTan;
+
+            return {
+              optimalDistance: Math.max(
+                widthConstraint,
+                heightConstraint,
+                diagonalConstraint
+              ),
+              size: size,
+            };
+          };
+
+          const { optimalDistance, size } = calculateOptimalDistance();
+          const finalDistance = optimalDistance + size.z / 2;
+
+          // Update camera and controls
+          camera.position.set(0, 0, finalDistance);
+          camera.lookAt(0, 0, 0);
+
+          const maxDim = Math.max(size.x, size.y, size.z);
+          controls.minDistance = maxDim * 0.5;
+          controls.maxDistance = finalDistance * 3;
+          controls.target.set(0, 0, 0);
+          controls.update();
+
+          if (forceUpdate) {
+            renderer.render(scene, camera);
+          }
+        }
+
+        // Animation loop
+        function animate() {
+          requestAnimationFrame(animate);
+          if (controls.enableDamping) controls.update();
+          TWEEN.update();
+          renderer.render(scene, camera);
+        }
+
+        // Set up event listeners
+        function setupEventListeners() {
+          // Window load event
+          window.addEventListener("load", () => {
+            if (cube) {
+              cube.rotation.set(0, 0, 0);
+              updateCameraPosition(true);
+            }
+          });
+        }
+
+        // Return public API
+        return {
+          init: init,
+          changeModelSize: changeModelSize,
+          updateFaceTexture: updateFaceTexture,
+          addLabelsToBox: addLabelsToBox,
+          addThickCircle: addThickCircle,
+          editThickCircle: editThickCircle,
+          deleteThickCircle: deleteThickCircle,
+          updateCameraPosition: updateCameraPosition,
+          getScene: () => scene,
+          getCamera: () => camera,
+          getControls: () => controls,
+          getCube: () => cube,
+          getDimensions: () => ({ ...dims }),
+          getMaterials: () => [...materials],
+          FACES: FACES, // Export face constants
+        };
+      })();
+
+      // Export BoxModel to the global scope so it can be accessed from the console
+      globalThis.BoxModel = BoxModel;
+
+      // Example usage from console:
+      // BoxModel.updateFaceTexture(BoxModel.FACES.TOP, '/path/to/texture.jpg');
+
+      // Initialize the model when the document is ready
+      document.addEventListener("DOMContentLoaded", BoxModel.init);
+    </script>
   </body>
 </html>
