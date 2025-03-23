@@ -15,8 +15,15 @@
       }
 
       #scene-container {
-        width: 100vw !important;
         height: 100vh !important;
+      }
+
+      #container {
+        display: flex;
+      }
+
+      #container #layout-container {
+        padding: 40px;
       }
     </style>
     <script type="importmap">
@@ -30,11 +37,101 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
   </head>
   <body>
-    <div id="scene-container" style="width: 100%; height: 100%"></div>
+    <div id="container">
+      <div
+        id="scene-container"
+        style="width: 50% !important; height: 100%"
+      ></div>
+      <div id="layout-container" style="width: 50% !important; height: 100%">
+        <div class="section-box">
+          <h2>Dimensions</h2>
+          <div class="input-group">
+            <input
+              type="number"
+              id="model-width"
+              placeholder="Width"
+              value="600"
+              min="300"
+              max="1524"
+              class="form-control"
+            />
+
+            <input
+              type="number"
+              id="model-length"
+              placeholder="Length"
+              value="1500"
+              min="300"
+              max="2743"
+              class="form-control"
+            />
+
+            <select id="model-thickness" class="form-select">
+              <option value="25.4">25.4mm</option>
+              <option value="15.875">15.875mm</option>
+            </select>
+          </div>
+        </div>
+        <div class="section-box">
+          <h2>Moulding</h2>
+          <div id="mouldings-container"></div>
+          <div class="mt-2 text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              id="add-moulding-btn"
+            >
+              Add Moulding
+            </button>
+          </div>
+        </div>
+        <div class="section-box">
+          <h2>Edge Banding</h2>
+          <div class="input-group">
+            <select
+              class="form-select"
+              id="top-select"
+              onchange="BoxModel.updateFaceTexture('top',this.value);"
+            >
+              <option value="/pb.jpg">None</option>
+              <option value="/walnut.jpg">Walnut</option>
+            </select>
+
+            <select
+              class="form-select"
+              id="right-select"
+              onchange="BoxModel.updateFaceTexture('right',this.value);"
+            >
+              <option value="/pb.jpg">None</option>
+              <option value="/walnut.jpg">Walnut</option>
+            </select>
+            <select
+              class="form-select"
+              id="bottom-select"
+              onchange="BoxModel.updateFaceTexture('bottom',this.value);"
+            >
+              <option value="/pb.jpg">None</option>
+              <option value="/walnut.jpg">Walnut</option>
+            </select>
+            <select
+              class="form-select"
+              id="left-select"
+              onchange="BoxModel.updateFaceTexture('left',this.value);"
+            >
+              <option value="/pb.jpg">None</option>
+              <option value="/walnut.jpg">Walnut</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import * as threeBvhCsg from "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.16/+esm";
+
+      let csgEvaluator = new threeBvhCsg.Evaluator();
 
       // Create a global model module using an immediately invoked function expression (IIFE)
       const BoxModel = (function () {
@@ -44,8 +141,64 @@
         const isNum = (v) => !isNaN(parseFloat(v)) && isFinite(v);
         let materials = Array(6)
           .fill()
-          .map(() => new THREE.MeshBasicMaterial({ color: 0xcccccc }));
+          .map(
+            () =>
+              new THREE.MeshStandardMaterial({
+                color: Math.random() * 0xffffff,
+              })
+          );
         let discs = [];
+        const materialMap = new Map();
+        let resultObject;
+        let initialBox;
+        let brushes = [];
+        let mouldingData = [];
+
+        // ...existing code...
+
+        // Function to create a shape from an array of points
+        function createShape(points) {
+          const shape = new THREE.Shape();
+          shape.moveTo(points[0][0], points[0][1]);
+          for (let i = 1; i < points.length; i++) {
+            shape.lineTo(points[i][0], points[i][1]);
+          }
+          shape.lineTo(points[0][0], points[0][1]); // Close the shape
+          shape.closePath();
+          return shape;
+        }
+
+        // Define points for shapes
+        const points16 = [
+          [0, 3],
+          [0, 20],
+          [10, 20],
+          [10, -20],
+          [0, -20],
+          [0, -3],
+          [-10, -3],
+          [-10, 3],
+        ];
+        const points17 = [
+          [0, 3],
+          [-9.5, 3],
+          [-9.5, 20],
+          [10, 20],
+          [10, -20],
+          [-9.5, -20],
+          [-9.5, -3],
+          [0, -3],
+        ];
+
+        // Create shapes using the function
+        const shape16 = createShape(points16);
+        const shape17 = createShape(points17);
+
+        const shapeMap = { shape16: shape16, shape17: shape17 };
+
+        function getShapeById(shapeId) {
+          return shapeMap[shapeId];
+        }
 
         // Initialize when DOM is ready
         function init() {
@@ -56,6 +209,14 @@
           const container = document.getElementById("scene-container");
           const w = container.clientWidth,
             h = container.clientHeight;
+
+          // lights
+          let light = new THREE.DirectionalLight(0xffffff, 3.5);
+          light.position.set(1, 2, 1);
+          scene.add(light, new THREE.AmbientLight(0xb0bec5, 0.35));
+
+          let ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+          scene.add(ambientLight);
 
           // Setup camera
           camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 10000);
@@ -82,6 +243,7 @@
 
           // Create initial box with placeholder materials
           createBox(materials);
+          updateCSG();
 
           // Load textures and set up event listeners
           loadInitialTextures();
@@ -191,7 +353,7 @@
           );
 
           // Create a material
-          const discMaterial = new THREE.MeshPhongMaterial({
+          const discMaterial = new THREE.MeshStandardMaterial({
             color: config.color,
             transparent: true,
             opacity: config.opacity,
@@ -475,6 +637,7 @@
         function createBox(materials) {
           if (cube) {
             scene.remove(cube);
+
             if (cube.userData.labelGroup) {
               scene.remove(cube.userData.labelGroup);
             }
@@ -502,17 +665,40 @@
               ? materials
               : Array(6).fill(
                   materials[0] ||
-                    new THREE.MeshBasicMaterial({ color: 0xcccccc })
+                    new THREE.MeshStandardMaterial({
+                      color: 0xcccccc,
+                      side: THREE.DoubleSide,
+                    })
                 )
             : Array(6).fill(
-                materials || new THREE.MeshBasicMaterial({ color: 0xcccccc })
+                materials ||
+                  new THREE.MeshStandardMaterial({
+                    color: 0xcccccc,
+                    side: THREE.DoubleSide,
+                  })
               );
 
-          cube = new THREE.Mesh(geometry, materialArray);
+          cube = new threeBvhCsg.Brush(geometry, materialArray);
           cube.position.set(0, 0, 0);
           cube.rotation.set(0, 0, 0);
           cube.userData.initialRotationApplied = true;
+          cube.updateWorldMatrix();
+
+          // add object displaying the result
+          resultObject = new THREE.Mesh(
+            new THREE.BufferGeometry(),
+            materialArray
+          );
+          resultObject.castShadow = true;
+          resultObject.receiveShadow = true;
+          scene.add(resultObject);
+
+          initialBox = cube;
+
           scene.add(cube);
+
+          updateCSG();
+
           return cube;
         }
 
@@ -528,7 +714,7 @@
           newThickness = isNum(newThickness) ? newThickness : dims.thickness;
 
           dims = {
-            length: newLength,
+            length: parseFloat(newLength),
             width: newWidth,
             thickness: newThickness,
           };
@@ -539,6 +725,7 @@
             addLabelsToBox(["Right", "Left", "Top", "Bottom", "Front", "Back"]);
           }
 
+          updateCSG();
           updateCameraPosition(true);
           return cube;
         }
@@ -569,13 +756,15 @@
               texture.minFilter = THREE.LinearMipmapLinearFilter;
               texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-              const newMaterial = new THREE.MeshBasicMaterial({ map: texture });
+              const newMaterial = new THREE.MeshStandardMaterial({
+                map: texture,
+              });
               materials[faceIndex] = newMaterial;
 
-              if (cube && cube.material) {
-                if (Array.isArray(cube.material)) {
-                  cube.material[faceIndex] = newMaterial;
-                  cube.material.needsUpdate = true;
+              if (resultObject && resultObject.material) {
+                if (Array.isArray(resultObject.material)) {
+                  resultObject.material[faceIndex] = newMaterial;
+                  resultObject.material.needsUpdate = true;
                 } else {
                   createBox(materials);
                   addLabelsToBox();
@@ -591,14 +780,14 @@
             undefined,
             (error) => {
               // Use a fallback color if texture fails to load
-              materials[faceIndex] = new THREE.MeshBasicMaterial({
+              materials[faceIndex] = new THREE.MeshStandardMaterial({
                 color: Math.random() * 0xffffff,
               });
 
-              if (cube && cube.material) {
-                if (Array.isArray(cube.material)) {
-                  cube.material[faceIndex] = materials[faceIndex];
-                  cube.material.needsUpdate = true;
+              if (resultObject && resultObject.material) {
+                if (Array.isArray(resultObject.material)) {
+                  resultObject.material[faceIndex] = materials[faceIndex];
+                  resultObject.material.needsUpdate = true;
                 }
               }
 
@@ -794,6 +983,282 @@
           });
         }
 
+        function addMouldingItem(face, options = {}) {
+          // Default options for positioning
+          const defaults = {
+            face: FACES.RIGHT,
+            topDistance: 25.4,
+            shapeId: "shape0",
+          };
+
+          // Merge provided options with defaults
+          const config = { ...defaults, ...options, face: face };
+
+          // Get current dimensions
+          const { length, width, thickness } = dims;
+
+          // Get moulding length
+          let mouldingLength = 0;
+          switch (face) {
+            case FACES.FRONT: // +Z
+              mouldingLength = 0;
+              break;
+
+            case FACES.BACK: // -Z
+              mouldingLength = 0;
+              break;
+
+            case FACES.RIGHT: // +X
+              mouldingLength = length;
+              break;
+
+            case FACES.LEFT: // -X
+              mouldingLength = length;
+              break;
+
+            case FACES.TOP: // +Y
+              mouldingLength = width;
+              break;
+
+            case FACES.BOTTOM: // -Y
+              mouldingLength = width;
+              break;
+          }
+
+          const extrudeSettings = {
+            steps: 5,
+            depth: mouldingLength - config.topDistance,
+            bevelEnabled: false,
+            curveSegments: 200,
+          };
+
+          // Create a cylinder geometry with equal top and bottom radius
+          const discGeometry = new THREE.ExtrudeGeometry(
+            getShapeById(config.shapeId),
+            extrudeSettings
+          );
+
+          // Create a material
+          let discMaterial;
+          switch (face) {
+            case FACES.FRONT: // +Z
+              discMaterial = materials[4];
+              break;
+
+            case FACES.BACK: // -Z
+              discMaterial = materials[5];
+              break;
+
+            case FACES.RIGHT: // +X
+              discMaterial = materials[0];
+              break;
+
+            case FACES.LEFT: // -X
+              discMaterial = materials[1];
+              break;
+
+            case FACES.TOP: // +Y
+              discMaterial = materials[2];
+              break;
+
+            case FACES.BOTTOM: // -Y
+              discMaterial = materials[3];
+              break;
+          }
+
+          // Create the mesh
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
+
+          // Calculate position based on face, millimeter coordinates, and dimensions
+          const position = [0, 0, 0];
+
+          // Calculate actual position based on face and millimeter measurements
+          switch (face) {
+            case FACES.FRONT: // +Z
+              // For front face: origin at top-left, X increases right, Y increases down
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = thickness / 2 + config.zOffset;
+              discMesh.rotation.x = Math.PI / 2;
+              break;
+
+            case FACES.BACK: // -Z
+              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
+              position[0] = width / 2 - config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = -thickness / 2 - config.zOffset;
+              discMesh.rotation.x = -Math.PI / 2;
+              break;
+
+            case FACES.RIGHT: // +X
+              // For right face: origin at top-front, X increases toward back, Y increases down
+              position[0] = width / 2;
+              position[1] = length / 2 - config.topDistance;
+              position[2] = 0;
+              discMesh.rotation.x = Math.PI / 2;
+              break;
+
+            case FACES.LEFT: // -X
+              // For left face: origin at top-back, X increases toward front, Y increases down
+              position[0] = -width / 2;
+              position[1] = -length / 2;
+              position[2] = 0;
+              discMesh.rotation.x = -Math.PI / 2;
+              discMesh.rotation.z = Math.PI;
+              break;
+
+            case FACES.TOP: // +Y
+              // For top face: origin at back-left, X increases right, Y increases forward
+              position[0] = -width / 2;
+              position[1] = length / 2;
+              position[2] = 0;
+              // Default rotation works for top face
+              discMesh.rotation.z = Math.PI / 2;
+              discMesh.rotation.y = Math.PI / 2;
+              break;
+
+            case FACES.BOTTOM: // -Y
+              // For bottom face: origin at front-left, X increases right, Y increases backward
+              position[0] = -width / 2;
+              position[1] = -length / 2;
+              position[2] = 0;
+              discMesh.rotation.y = Math.PI / 2;
+              discMesh.rotation.z = -Math.PI / 2;
+              break;
+          }
+
+          // Set position
+          discMesh.position.set(...position);
+          discMesh.updateWorldMatrix();
+
+          brushes.push(discMesh);
+
+          // Add to scene
+          // scene.add(discMesh);
+
+          // Store the disc for later reference
+          const discId =
+            Date.now().toString() + Math.random().toString(36).substr(2, 9);
+          discs.push({
+            id: discId,
+            mesh: discMesh,
+            face: config.face,
+            topMM: config.topMM,
+            leftMM: config.leftMM,
+          });
+
+          // Render the scene
+          // renderer.render(scene, camera);
+
+          // Return the disc's ID so it can be removed later
+          return discId;
+        }
+
+        function updateCSG() {
+          if (mouldingData.length > 0) {
+            brushes = [];
+            mouldingData.forEach((data) => {
+              addMouldingItem(data.face, {
+                topDistance: data.topDistance,
+                shapeId: data.shapeId,
+              });
+            });
+
+            // Remove all objects from scene
+            for (let i = scene.children.length - 1; i >= 0; i--) {
+              let obj = scene.children[i];
+              if (obj.isMesh) {
+                obj.geometry.dispose(); // Dispose geometry
+                scene.remove(obj); // Remove from scene
+              }
+            }
+
+            scene.add(resultObject);
+            let finalBrush = brushes[0];
+
+            for (let i = 1, l = brushes.length; i < l; i++) {
+              const b = brushes[i];
+              finalBrush = csgEvaluator.evaluate(
+                finalBrush,
+                b,
+                threeBvhCsg.ADDITION
+              );
+            }
+
+            csgEvaluator.evaluate(
+              cube,
+              finalBrush,
+              threeBvhCsg.SUBTRACTION,
+              resultObject
+            );
+            renderer.render(scene, camera);
+          } else if (mouldingData.length === 0) {
+            for (let i = scene.children.length - 1; i >= 0; i--) {
+              let obj = scene.children[i];
+              if (obj.isMesh) {
+                obj.geometry.dispose(); // Dispose geometry
+                scene.remove(obj); // Remove from scene
+              }
+            }
+
+            scene.add(cube);
+          }
+        }
+
+        function addMoulding(mouldingId, face, options = {}) {
+          const defaults = {
+            mouldingId: "",
+            face: "",
+            topDistance: 0,
+            shapeId: "",
+          };
+
+          const config = {
+            ...defaults,
+            ...options,
+            mouldingId: mouldingId,
+            face: face,
+          };
+
+          mouldingData.push({
+            ...config,
+          });
+
+          updateCSG();
+        }
+
+        function editMoulding(target, value, id) {
+          switch (target) {
+            case "face":
+              mouldingData.filter((item) => item.mouldingId === id)[0].face =
+                value;
+
+              break;
+            case "topDistance":
+              mouldingData.filter(
+                (item) => item.mouldingId === id
+              )[0].topDistance = value;
+
+              break;
+            case "shapeId":
+              mouldingData.filter((item) => item.mouldingId === id)[0].shapeId =
+                value;
+
+              break;
+
+            default:
+              break;
+          }
+
+          updateCSG();
+        }
+
+        function deleteMoulding(id) {
+          mouldingData = mouldingData.filter((item) => item.mouldingId !== id);
+
+          updateCSG();
+        }
+
         // Return public API
         return {
           init: init,
@@ -810,7 +1275,10 @@
           getCube: () => cube,
           getDimensions: () => ({ ...dims }),
           getMaterials: () => [...materials],
-          FACES: FACES, // Export face constants
+          FACES: FACES, // Export face
+          addMoulding: addMoulding,
+          editMoulding: editMoulding,
+          deleteMoulding: deleteMoulding,
         };
       })();
 
@@ -818,10 +1286,90 @@
       globalThis.BoxModel = BoxModel;
 
       // Example usage from console:
-      // BoxModel.updateFaceTexture(BoxModel.FACES.TOP, '/path/to/texture.jpg');
+      // BoxModel.updateFaceTexture(BoxModel.FACES.TOP, "/path/to/texture.jpg");
 
       // Initialize the model when the document is ready
       document.addEventListener("DOMContentLoaded", BoxModel.init);
+
+      document.getElementById("model-width").addEventListener("change", (e) => {
+        BoxModel.changeModelSize(
+          BoxModel.getDimensions().length,
+          parseFloat(e.target.value),
+          BoxModel.getDimensions().thickness
+        );
+      });
+      document
+        .getElementById("model-length")
+        .addEventListener("change", (e) => {
+          BoxModel.changeModelSize(
+            parseFloat(e.target.value),
+            BoxModel.getDimensions().width,
+            BoxModel.getDimensions().thickness
+          );
+        });
+      document
+        .getElementById("model-thickness")
+        .addEventListener("change", (e) => {
+          BoxModel.changeModelSize(
+            BoxModel.getDimensions().length,
+            BoxModel.getDimensions().width,
+            parseFloat(e.target.value)
+          );
+        });
+
+      document
+        .getElementById("add-moulding-btn")
+        .addEventListener("click", function () {
+          const container = document.getElementById("mouldings-container");
+
+          // Generate moulding Id
+          const mouldingId =
+            Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
+          // Create a new moulding item
+          const newItem = document.createElement("div");
+          newItem.classList.add("moulding-item");
+          newItem.dataset.mouldingId = mouldingId; // Unique ID
+
+          newItem.innerHTML = `
+          <div class="input-group mb-2">
+              <select class="form-select moulding-face" onchange="BoxModel.editMoulding('face', this.value, this.closest('.moulding-item').dataset.mouldingId)">
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                  <option value="top">Top</option>
+                  <option value="bottom">Bottom</option>
+              </select>
+              <input type="number" placeholder="Distance from Top" class="form-control moulding-distance"  onchange="BoxModel.editMoulding('topDistance', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
+              <select class="form-select moulding-shape" onchange="BoxModel.editMoulding('shapeId', this.value, this.closest('.moulding-item').dataset.mouldingId)">
+                  <option value="">None</option>
+                  <option value="shape16">Shape 16</option>
+                  <option value="shape17">Shape 17</option>
+              </select>
+              <button onclick="BoxModel.deleteMoulding(this.closest('.moulding-item').dataset.mouldingId)" type="button" class="btn btn-danger remove-moulding" id="delete-moulding-btn">
+                  Delete
+              </button>
+          </div>
+      `;
+
+          // Append new item to container
+          container.appendChild(newItem);
+
+          // Add moulding data
+          BoxModel.addMoulding(mouldingId, BoxModel.FACES.LEFT, {});
+        });
+
+      // Event delegation for removing items
+      document
+        .getElementById("mouldings-container")
+        .addEventListener("click", function (e) {
+          // If the clicked element is the delete button, remove the corresponding moulding item
+          if (e.target && e.target.id === "delete-moulding-btn") {
+            const mouldingItem = e.target.closest(".moulding-item");
+            if (mouldingItem) {
+              mouldingItem.remove();
+            }
+          }
+        });
     </script>
   </body>
 </html>
