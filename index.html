@@ -123,6 +123,24 @@
             </select>
           </div>
         </div>
+        <div class="section-box">
+          <h2>Cutout Holes</h2>
+          <div id="cutouts-container"></div>
+          <div class="mt-2 text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              id="add-cutout-btn"
+            >
+              Add Cutout
+            </button>
+          </div>
+          <input
+            type="hidden"
+            name="cutout_holes_data"
+            id="cutout-holes-data"
+          />
+        </div>
       </div>
     </div>
 
@@ -153,6 +171,7 @@
         let initialBox;
         let brushes = [];
         let mouldingData = [];
+        let holesData = [];
 
         // ...existing code...
 
@@ -195,9 +214,18 @@
         const shape17 = createShape(points17);
 
         const shapeMap = { shape16: shape16, shape17: shape17 };
+        const shapeDims = {
+          shape0: { width: 6 },
+          shape16: { width: 6 },
+          shape17: { width: 6 },
+        };
 
         function getShapeById(shapeId) {
           return shapeMap[shapeId];
+        }
+
+        function getShapeDimsById(shapeId) {
+          return shapeDims[shapeId];
         }
 
         // Initialize when DOM is ready
@@ -210,13 +238,8 @@
           const w = container.clientWidth,
             h = container.clientHeight;
 
-          // lights
-          let light = new THREE.DirectionalLight(0xffffff, 3.5);
-          light.position.set(1, 2, 1);
-          scene.add(light, new THREE.AmbientLight(0xb0bec5, 0.35));
-
-          let ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-          scene.add(ambientLight);
+          let light = new THREE.HemisphereLight(0xffffff, 0xffffff, 1);
+          scene.add(light);
 
           // Setup camera
           camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 10000);
@@ -353,14 +376,10 @@
           );
 
           // Create a material
-          const discMaterial = new THREE.MeshStandardMaterial({
-            color: config.color,
-            transparent: true,
-            opacity: config.opacity,
-          });
+          const discMaterial = new THREE.MeshStandardMaterial();
 
           // Create the mesh
-          const discMesh = new THREE.Mesh(discGeometry, discMaterial);
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
 
           // Calculate position based on face, millimeter coordinates, and dimensions
           const position = [0, 0, 0];
@@ -421,9 +440,13 @@
 
           // Set position
           discMesh.position.set(...position);
+          discMesh.updateWorldMatrix();
 
           // Add to scene
-          scene.add(discMesh);
+          // scene.add(discMesh);
+          brushes.push(discMesh);
+
+          updateCSG();
 
           // Store the disc for later reference
           const discId =
@@ -435,6 +458,8 @@
             topMM: config.topMM,
             leftMM: config.leftMM,
           });
+
+          console.log("addhole");
 
           // Render the scene
           renderer.render(scene, camera);
@@ -599,36 +624,13 @@
         }
 
         function deleteThickCircle(discId) {
-          // Find the disc by ID
-          const discIndex = discs.findIndex((disc) => disc.id === discId);
+          const updatedItems = discs.filter((item) => item.id === discId)[0];
+          const updateBrushes = brushes.filter(
+            (item) => item !== updatedItems.mesh
+          );
+          brushes = updateBrushes;
 
-          if (discIndex === -1) {
-            console.error(`Disc with ID ${discId} not found.`);
-            return false;
-          }
-
-          // Get the disc and its mesh
-          const disc = discs[discIndex];
-          const discMesh = disc.mesh;
-
-          // Remove the mesh from the scene
-          scene.remove(discMesh);
-
-          // Properly dispose of resources
-          if (discMesh.geometry) discMesh.geometry.dispose();
-          if (discMesh.material) {
-            if (Array.isArray(discMesh.material)) {
-              discMesh.material.forEach((material) => material.dispose());
-            } else {
-              discMesh.material.dispose();
-            }
-          }
-
-          // Remove the disc from the discs array
-          discs.splice(discIndex, 1);
-
-          // Render the scene to update the view
-          renderer.render(scene, camera);
+          updateCSG();
 
           return true;
         }
@@ -997,6 +999,14 @@
           // Get current dimensions
           const { length, width, thickness } = dims;
 
+          // Get shape dims
+          let currentShapeDims;
+          if (config.shapeId) {
+            currentShapeDims = getShapeDimsById(config.shapeId);
+          } else {
+            currentShapeDims = { width: 0 };
+          }
+
           // Get moulding length
           let mouldingLength = 0;
           switch (face) {
@@ -1094,7 +1104,9 @@
               // For right face: origin at top-front, X increases toward back, Y increases down
               position[0] = width / 2;
               position[1] = length / 2;
-              position[2] = -config.topDistance;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
               discMesh.rotation.x = Math.PI / 2;
               break;
 
@@ -1102,7 +1114,9 @@
               // For left face: origin at top-back, X increases toward front, Y increases down
               position[0] = -width / 2;
               position[1] = -length / 2;
-              position[2] = -config.topDistance;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
               discMesh.rotation.x = -Math.PI / 2;
               discMesh.rotation.z = Math.PI;
               break;
@@ -1111,7 +1125,9 @@
               // For top face: origin at back-left, X increases right, Y increases forward
               position[0] = -width / 2;
               position[1] = length / 2;
-              position[2] = -config.topDistance;
+              position[2] =
+                config.topDistance / 2 +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
               // Default rotation works for top face
               discMesh.rotation.z = Math.PI / 2;
               discMesh.rotation.y = Math.PI / 2;
@@ -1121,7 +1137,9 @@
               // For bottom face: origin at front-left, X increases right, Y increases backward
               position[0] = -width / 2;
               position[1] = -length / 2;
-              position[2] = -config.topDistance;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
               discMesh.rotation.y = Math.PI / 2;
               discMesh.rotation.z = -Math.PI / 2;
               break;
@@ -1130,8 +1148,6 @@
           // Set position
           discMesh.position.set(...position);
           discMesh.updateWorldMatrix();
-
-          brushes.push(discMesh);
 
           // Add to scene
           // scene.add(discMesh);
@@ -1147,6 +1163,8 @@
             leftMM: config.leftMM,
           });
 
+          brushes.push(discMesh);
+
           // Render the scene
           // renderer.render(scene, camera);
 
@@ -1155,17 +1173,9 @@
         }
 
         function updateCSG() {
-          if (mouldingData.length > 0) {
-            brushes = [];
-            mouldingData.forEach((data) => {
-              console.log("topDistance: ", data.topDistance);
-              addMouldingItem(data.face, {
-                topDistance: parseFloat(data.topDistance),
-                shapeId: data.shapeId,
-              });
-            });
+          if (brushes.length > 0) {
+            let finalBrush = brushes[0];
 
-            // Remove all objects from scene
             for (let i = scene.children.length - 1; i >= 0; i--) {
               let obj = scene.children[i];
               if (obj.isMesh) {
@@ -1173,9 +1183,7 @@
                 scene.remove(obj); // Remove from scene
               }
             }
-
             scene.add(resultObject);
-            let finalBrush = brushes[0];
 
             for (let i = 1, l = brushes.length; i < l; i++) {
               const b = brushes[i];
@@ -1192,8 +1200,7 @@
               threeBvhCsg.SUBTRACTION,
               resultObject
             );
-            renderer.render(scene, camera);
-          } else if (mouldingData.length === 0) {
+          } else {
             for (let i = scene.children.length - 1; i >= 0; i--) {
               let obj = scene.children[i];
               if (obj.isMesh) {
@@ -1204,6 +1211,7 @@
 
             scene.add(cube);
           }
+          renderer.render(scene, camera);
         }
 
         function addMoulding(mouldingId, face, options = {}) {
@@ -1221,30 +1229,212 @@
             face: face,
           };
 
-          mouldingData.push({
-            ...config,
+          // Get current dimensions
+          const { length, width, thickness } = dims;
+
+          // Get shape dims
+          let currentShapeDims;
+          if (config.shapeId) {
+            currentShapeDims = getShapeDimsById(config.shapeId);
+          } else {
+            currentShapeDims = { width: 0 };
+          }
+
+          // Get moulding length
+          let mouldingLength = 0;
+          switch (face) {
+            case FACES.FRONT: // +Z
+              mouldingLength = 0;
+              break;
+
+            case FACES.BACK: // -Z
+              mouldingLength = 0;
+              break;
+
+            case FACES.RIGHT: // +X
+              mouldingLength = length;
+              break;
+
+            case FACES.LEFT: // -X
+              mouldingLength = length;
+              break;
+
+            case FACES.TOP: // +Y
+              mouldingLength = width;
+              break;
+
+            case FACES.BOTTOM: // -Y
+              mouldingLength = width;
+              break;
+          }
+
+          const extrudeSettings = {
+            steps: 5,
+            depth: mouldingLength,
+            bevelEnabled: false,
+            curveSegments: 200,
+          };
+
+          // Create a cylinder geometry with equal top and bottom radius
+          const discGeometry = new THREE.ExtrudeGeometry(
+            getShapeById(config.shapeId),
+            extrudeSettings
+          );
+
+          // Create a material
+          let discMaterial;
+          switch (face) {
+            case FACES.FRONT: // +Z
+              discMaterial = materials[4];
+              break;
+
+            case FACES.BACK: // -Z
+              discMaterial = materials[5];
+              break;
+
+            case FACES.RIGHT: // +X
+              discMaterial = materials[0];
+              break;
+
+            case FACES.LEFT: // -X
+              discMaterial = materials[1];
+              break;
+
+            case FACES.TOP: // +Y
+              discMaterial = materials[2];
+              break;
+
+            case FACES.BOTTOM: // -Y
+              discMaterial = materials[3];
+              break;
+          }
+
+          // Create the mesh
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
+          discMesh.userData.id = mouldingId;
+
+          // Calculate position based on face, millimeter coordinates, and dimensions
+          const position = [0, 0, 0];
+
+          // Calculate actual position based on face and millimeter measurements
+          switch (face) {
+            case FACES.FRONT: // +Z
+              // For front face: origin at top-left, X increases right, Y increases down
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = thickness / 2 + config.zOffset;
+              discMesh.rotation.x = Math.PI / 2;
+              break;
+
+            case FACES.BACK: // -Z
+              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
+              position[0] = width / 2 - config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = -thickness / 2 - config.zOffset;
+              discMesh.rotation.x = -Math.PI / 2;
+              break;
+
+            case FACES.RIGHT: // +X
+              // For right face: origin at top-front, X increases toward back, Y increases down
+              position[0] = width / 2;
+              position[1] = length / 2;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              discMesh.rotation.x = Math.PI / 2;
+              break;
+
+            case FACES.LEFT: // -X
+              // For left face: origin at top-back, X increases toward front, Y increases down
+              position[0] = -width / 2;
+              position[1] = -length / 2;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              discMesh.rotation.x = -Math.PI / 2;
+              discMesh.rotation.z = Math.PI;
+              break;
+
+            case FACES.TOP: // +Y
+              // For top face: origin at back-left, X increases right, Y increases forward
+              position[0] = -width / 2;
+              position[1] = length / 2;
+              position[2] =
+                config.topDistance / 2 +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              // Default rotation works for top face
+              discMesh.rotation.z = Math.PI / 2;
+              discMesh.rotation.y = Math.PI / 2;
+              break;
+
+            case FACES.BOTTOM: // -Y
+              // For bottom face: origin at front-left, X increases right, Y increases backward
+              position[0] = -width / 2;
+              position[1] = -length / 2;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              discMesh.rotation.y = Math.PI / 2;
+              discMesh.rotation.z = -Math.PI / 2;
+              break;
+          }
+
+          // Set position
+          discMesh.position.set(...position);
+          discMesh.updateWorldMatrix();
+
+          // Store the disc for later reference
+          discs.push({
+            id: mouldingId,
+            mesh: discMesh,
+            face: config.face,
+            topDistance: config.topDistance,
+            shapeId: config.shapeId,
           });
+
+          const updatedBrushes = brushes.filter(
+            (item) => item.userData.id !== mouldingId
+          );
+          brushes = updatedBrushes;
+
+          brushes.push(discMesh);
 
           updateCSG();
         }
 
         function editMoulding(target, value, id) {
+          const disc = discs.filter((item) => item.id === id)[0];
+          const updateDiscs = discs.filter((item) => item.id !== id);
+
           switch (target) {
             case "face":
-              mouldingData.filter((item) => item.mouldingId === id)[0].face =
-                value;
+              discs = updateDiscs;
+
+              addMoulding(disc.id, value, {
+                topDistance: disc.topDistance,
+                shapeId: disc.shapeId,
+              });
+
+              console.log("face: ", disc);
 
               break;
             case "topDistance":
-              mouldingData.filter(
-                (item) => item.mouldingId === id
-              )[0].topDistance = value;
+              discs = updateDiscs;
 
+              console.log("topDistance: ", value);
+
+              addMoulding(disc.id, disc.face, {
+                topDistance: parseFloat(value),
+                shapeId: disc.shapeId,
+              });
               break;
             case "shapeId":
-              mouldingData.filter((item) => item.mouldingId === id)[0].shapeId =
-                value;
+              discs = updateDiscs;
 
+              addMoulding(disc.id, disc.face, {
+                topDistance: disc.topDistance,
+                shapeId: value,
+              });
               break;
 
             default:
@@ -1255,7 +1445,11 @@
         }
 
         function deleteMoulding(id) {
-          mouldingData = mouldingData.filter((item) => item.mouldingId !== id);
+          const updatedItems = discs.filter((item) => item.id === id)[0];
+          const updateBrushes = brushes.filter(
+            (item) => item !== updatedItems.mesh
+          );
+          brushes = updateBrushes;
 
           updateCSG();
         }
@@ -1371,6 +1565,103 @@
             }
           }
         });
+
+      const container = document.getElementById("cutouts-container"),
+        holesInput = document.getElementById("cutout-holes-data"),
+        cutoutCircles = {},
+        DEFAULT_CUTOUT = { top: 100, left: 100, diameter: 30 };
+
+      function getThickness() {
+        return parseInt(document.getElementById("thickness")?.value) || 60;
+      }
+
+      function getData(item) {
+        return {
+          top: +item.querySelector(".cutout-top").value || 0,
+          left: +item.querySelector(".cutout-left").value || 0,
+          diameter: +item.querySelector(".cutout-diameter").value || 30,
+        };
+      }
+
+      function updateHoles() {
+        holesInput.value = JSON.stringify(
+          [...container.querySelectorAll(".cutout-item")].map(getData)
+        );
+      }
+
+      function renderCircle(id, data) {
+        const radius = data.diameter / 2,
+          thickness = getThickness();
+        cutoutCircles[id] = BoxModel.addThickCircle(radius, thickness, {
+          face: BoxModel.FACES.FRONT,
+          zOffset: -(thickness / 2),
+          topMM: data.top,
+          leftMM: data.left,
+          color: 0xff0000,
+          opacity: 0.7,
+        });
+      }
+
+      function removeCircle(id) {
+        BoxModel.deleteThickCircle(cutoutCircles[id]);
+        delete cutoutCircles[id];
+      }
+
+      function addCutout(data = DEFAULT_CUTOUT) {
+        const id = Date.now().toString();
+        container.insertAdjacentHTML(
+          "beforeend",
+          `
+                <div class="cutout-item" data-cutout-id="${id}">
+                    <div class="input-group mb-2">
+                        <input type="number" placeholder="Top" value="${data.top}" class="cutout-top form-control">
+                        <input type="number" placeholder="Left" value="${data.left}" class="cutout-left form-control">
+                        <select class="form-select cutout-diameter">
+                            <option value="60">60mm</option>
+                            <option value="40">40mm</option>
+                        </select>
+                        <button type="button" class="btn btn-danger remove-cutout"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                </div>
+            `
+        );
+        renderCircle(id, data);
+        updateHoles();
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        try {
+          JSON.parse(holesInput.value || "[]").forEach((cutout, idx) =>
+            renderCircle(idx.toString(), cutout)
+          );
+        } catch (e) {
+          console.error(e);
+        }
+
+        document.getElementById("add-cutout-btn").onclick = () => addCutout();
+
+        container.addEventListener("click", (e) => {
+          if (e.target.closest(".remove-cutout")) {
+            const item = e.target.closest(".cutout-item");
+            removeCircle(item.dataset.cutoutId);
+            item.remove();
+            updateHoles();
+          }
+        });
+
+        container.addEventListener("change", (e) => {
+          if (
+            ["cutout-top", "cutout-left", "cutout-diameter"].some((cls) =>
+              e.target.classList.contains(cls)
+            )
+          ) {
+            const item = e.target.closest(".cutout-item");
+            removeCircle(item.dataset.cutoutId);
+            renderCircle(item.dataset.cutoutId, getData(item));
+            updateHoles();
+          }
+        });
+      });
     </script>
   </body>
 </html>
