@@ -1027,7 +1027,7 @@
 
           const extrudeSettings = {
             steps: 5,
-            depth: mouldingLength - config.topDistance,
+            depth: mouldingLength,
             bevelEnabled: false,
             curveSegments: 200,
           };
@@ -1093,8 +1093,8 @@
             case FACES.RIGHT: // +X
               // For right face: origin at top-front, X increases toward back, Y increases down
               position[0] = width / 2;
-              position[1] = length / 2 - config.topDistance;
-              position[2] = 0;
+              position[1] = length / 2;
+              position[2] = -config.topDistance;
               discMesh.rotation.x = Math.PI / 2;
               break;
 
@@ -1102,7 +1102,7 @@
               // For left face: origin at top-back, X increases toward front, Y increases down
               position[0] = -width / 2;
               position[1] = -length / 2;
-              position[2] = 0;
+              position[2] = -config.topDistance;
               discMesh.rotation.x = -Math.PI / 2;
               discMesh.rotation.z = Math.PI;
               break;
@@ -1111,7 +1111,7 @@
               // For top face: origin at back-left, X increases right, Y increases forward
               position[0] = -width / 2;
               position[1] = length / 2;
-              position[2] = 0;
+              position[2] = -config.topDistance;
               // Default rotation works for top face
               discMesh.rotation.z = Math.PI / 2;
               discMesh.rotation.y = Math.PI / 2;
@@ -1121,7 +1121,7 @@
               // For bottom face: origin at front-left, X increases right, Y increases backward
               position[0] = -width / 2;
               position[1] = -length / 2;
-              position[2] = 0;
+              position[2] = -config.topDistance;
               discMesh.rotation.y = Math.PI / 2;
               discMesh.rotation.z = -Math.PI / 2;
               break;
@@ -1158,8 +1158,9 @@
           if (mouldingData.length > 0) {
             brushes = [];
             mouldingData.forEach((data) => {
+              console.log("topDistance: ", data.topDistance);
               addMouldingItem(data.face, {
-                topDistance: data.topDistance,
+                topDistance: parseFloat(data.topDistance),
                 shapeId: data.shapeId,
               });
             });
