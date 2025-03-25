@@ -141,6 +141,32 @@
             id="cutout-holes-data"
           />
         </div>
+        <div class="section-box">
+          <h2>Bevel Cut</h2>
+          <div id="bevels-container"></div>
+          <div class="mt-2 text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              id="add-bevelcut-btn"
+            >
+              Add Cutout
+            </button>
+          </div>
+        </div>
+        <div class="section-box">
+          <h2>Mitre Cut</h2>
+          <div id="mitre-cut-container"></div>
+          <div class="mt-2 text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              id="add-mitrecut-btn"
+            >
+              Add Cutout
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -286,6 +312,20 @@
           BACK: "back",
         };
 
+        // Define Bevel Cut Directions
+        const DIRECTIONS = {
+          INWARD: "inward",
+          OUTWARD: "outward",
+        };
+
+        // Define Mitre Cut Locations
+        const LOCATIONS = {
+          TOPLEFTCORNER: "top-left",
+          TOPRIGHTCORNER: "top-right",
+          BOTTOMLEFTCORNER: "bottom-left",
+          BOTTOMRIGHTCORNER: "bottom-right",
+        };
+
         // Mapping between face keys and BoxGeometry indices
         const faceKeyToIndex = {
           [FACES.RIGHT]: 0, // +X
@@ -369,14 +409,16 @@
           const discGeometry = new THREE.CylinderGeometry(
             radius, // radiusTop
             radius, // radiusBottom
-            thickness, // height (thickness)
+            dims.thickness + 0.1, // height (thickness)
             32, // radialSegments
             1, // heightSegments
             false // openEnded
           );
 
           // Create a material
-          const discMaterial = new THREE.MeshStandardMaterial();
+          const discMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+          });
 
           // Create the mesh
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
@@ -393,7 +435,7 @@
               // For front face: origin at top-left, X increases right, Y increases down
               position[0] = -width / 2 + config.leftMM;
               position[1] = length / 2 - config.topMM;
-              position[2] = boxThickness / 2 + config.zOffset;
+              position[2] = 0;
               discMesh.rotation.x = Math.PI / 2;
               break;
 
@@ -458,8 +500,6 @@
             topMM: config.topMM,
             leftMM: config.leftMM,
           });
-
-          console.log("addhole");
 
           // Render the scene
           renderer.render(scene, camera);
@@ -1187,11 +1227,15 @@
 
             for (let i = 1, l = brushes.length; i < l; i++) {
               const b = brushes[i];
-              finalBrush = csgEvaluator.evaluate(
-                finalBrush,
-                b,
-                threeBvhCsg.ADDITION
-              );
+              const isOverlapping = checkBrushOverlap(b, cube);
+
+              if (isOverlapping) {
+                finalBrush = csgEvaluator.evaluate(
+                  finalBrush,
+                  b,
+                  threeBvhCsg.ADDITION
+                );
+              }
             }
 
             csgEvaluator.evaluate(
@@ -1212,6 +1256,16 @@
             scene.add(cube);
           }
           renderer.render(scene, camera);
+        }
+
+        // Function to check if a brush overlaps with the cube (implement accordingly based on the structure of your brush and cube objects)
+        function checkBrushOverlap(brush, cube) {
+          // Create bounding boxes for brush and cube
+          const brushBox = new THREE.Box3().setFromObject(brush);
+          const cubeBox = new THREE.Box3().setFromObject(cube);
+
+          // Check if the bounding boxes intersect
+          return brushBox.intersectsBox(cubeBox);
         }
 
         function addMoulding(mouldingId, face, options = {}) {
@@ -1415,13 +1469,9 @@
                 shapeId: disc.shapeId,
               });
 
-              console.log("face: ", disc);
-
               break;
             case "topDistance":
               discs = updateDiscs;
-
-              console.log("topDistance: ", value);
 
               addMoulding(disc.id, disc.face, {
                 topDistance: parseFloat(value),
@@ -1440,8 +1490,6 @@
             default:
               break;
           }
-
-          updateCSG();
         }
 
         function deleteMoulding(id) {
@@ -1450,6 +1498,282 @@
             (item) => item !== updatedItems.mesh
           );
           brushes = updateBrushes;
+
+          updateCSG();
+        }
+
+        // Add bevel Cut
+        function addBevelCut(bevelCutId, options = {}) {
+          const defaults = {
+            bevelCutId: "",
+            edge: "",
+            direction: "",
+            angle: 0,
+          };
+
+          const config = {
+            ...defaults,
+            ...options,
+            bevelCutId: bevelCutId,
+          };
+
+          const { length, width, thickness: boxThickness } = dims;
+
+          // Get moulding length
+          let bevelCutLength = 0;
+
+          let bevelCutDims = { x: 0, y: 0, z: 0 };
+          let bevelCutPos = { x: 0, y: 0, z: 0 };
+          let bevelCutRot = { x: 0, y: 0, z: 0 };
+
+          switch (config.edge) {
+            case FACES.RIGHT: // +X
+              bevelCutLength = length;
+
+              bevelCutDims.x = boxThickness * 2 * Math.sin(Math.PI / 6);
+              bevelCutDims.y = length * 2;
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+
+              bevelCutPos.x =
+                width / 2 + boxThickness / 4 / Math.cos(Math.PI / 6) - 1;
+
+              switch (config.direction) {
+                case DIRECTIONS.INWARD:
+                  bevelCutRot.y = config.angle;
+
+                  break;
+
+                case DIRECTIONS.OUTWARD:
+                  bevelCutRot.y = -config.angle;
+
+                  break;
+              }
+              break;
+
+            case FACES.LEFT: // -X
+              bevelCutLength = length;
+
+              bevelCutDims.x = boxThickness * 2 * Math.sin(Math.PI / 6);
+              bevelCutDims.y = length * 2;
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+
+              bevelCutPos.x = -(
+                width / 2 +
+                boxThickness / 4 / Math.cos(Math.PI / 6) -
+                1
+              );
+
+              switch (config.direction) {
+                case DIRECTIONS.INWARD:
+                  bevelCutRot.y = config.angle;
+
+                  break;
+
+                case DIRECTIONS.OUTWARD:
+                  bevelCutRot.y = -config.angle;
+
+                  break;
+              }
+              break;
+
+            case FACES.TOP: // +Y
+              bevelCutLength = width;
+
+              bevelCutDims.x = width * 2;
+              bevelCutDims.y = boxThickness * 2 * Math.sin(Math.PI / 6);
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+
+              bevelCutPos.y =
+                length / 2 + boxThickness / 4 / Math.cos(Math.PI / 6) - 1;
+
+              switch (config.direction) {
+                case DIRECTIONS.INWARD:
+                  bevelCutRot.x = config.angle;
+                  bevelCutRot.y = 0;
+                  bevelCutRot.z = 0;
+
+                  break;
+
+                case DIRECTIONS.OUTWARD:
+                  bevelCutRot.x = -config.angle;
+                  bevelCutRot.y = 0;
+                  bevelCutRot.z = 0;
+
+                  break;
+              }
+              break;
+
+            case FACES.BOTTOM: // -Y
+              bevelCutLength = width;
+
+              bevelCutDims.x = width * 2;
+              bevelCutDims.y = boxThickness * 2 * Math.sin(Math.PI / 6);
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+
+              bevelCutPos.y = -(
+                length / 2 +
+                boxThickness / 4 / Math.cos(Math.PI / 6) -
+                1
+              );
+
+              switch (config.direction) {
+                case DIRECTIONS.INWARD:
+                  bevelCutRot.x = config.angle;
+                  bevelCutRot.y = 0;
+                  bevelCutRot.z = 0;
+
+                  break;
+
+                case DIRECTIONS.OUTWARD:
+                  bevelCutRot.x = -config.angle;
+                  bevelCutRot.y = 0;
+                  bevelCutRot.z = 0;
+
+                  break;
+              }
+              break;
+          }
+
+          const discGeometry = new THREE.BoxGeometry(
+            bevelCutDims.x,
+            bevelCutDims.y,
+            bevelCutDims.z
+          );
+          const discMaterial = new THREE.MeshStandardMaterial();
+
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
+          discMesh.position.set(bevelCutPos.x, bevelCutPos.y, bevelCutPos.z);
+          discMesh.rotation.set(bevelCutRot.x, bevelCutRot.y, bevelCutRot.z);
+          discMesh.userData.id = bevelCutId;
+          discMesh.updateWorldMatrix();
+
+          if (
+            config.direction !== "" &&
+            config.edge !== "" &&
+            config.angle !== 0
+          ) {
+            discs.push({
+              id: bevelCutId,
+              mesh: discMesh,
+              edge: config.edge,
+              direction: config.direction,
+              angle: config.angle,
+            });
+
+            const updatedBrushes = brushes.filter(
+              (item) => item.userData.id !== bevelCutId
+            );
+            brushes = updatedBrushes;
+
+            brushes.push(discMesh);
+            updateCSG();
+          }
+        }
+
+        // Edit Bevel Cut
+        function editBevelCut(bevelCutId, options = {}) {
+          addBevelCut(bevelCutId, { ...options });
+        }
+
+        // Remove Bevel Cut
+        function deleteBevelCut(bevelCutId) {
+          const updatedBrushes = brushes.filter(
+            (item) => item.userData.id !== bevelCutId
+          );
+          brushes = updatedBrushes;
+
+          updateCSG();
+        }
+
+        // Add Mitre Cut
+        function addMitreCut(mitreCutId, options = {}) {
+          const defaults = {
+            mitreCutId: "",
+            location: "",
+            angle: 0,
+          };
+
+          const config = {
+            ...defaults,
+            ...options,
+            mitreCutId: mitreCutId,
+          };
+
+          const { length, width, thickness: boxThickness } = dims;
+
+          // Get moulding length
+          let mitreCutPos = { x: 0, y: 0, z: 0 };
+          let mitreCutRot = { x: 0, y: 0, z: 0 };
+
+          switch (config.location) {
+            case LOCATIONS.TOPLEFTCORNER:
+              mitreCutPos.y = length / 2;
+              mitreCutRot.z = config.angle;
+              break;
+
+            case LOCATIONS.TOPRIGHTCORNER:
+              mitreCutPos.y = length / 2;
+              mitreCutRot.z = -config.angle;
+
+              break;
+
+            case LOCATIONS.BOTTOMLEFTCORNER:
+              mitreCutPos.y = -length / 2;
+              mitreCutRot.z = config.angle;
+
+              break;
+
+            case LOCATIONS.BOTTOMRIGHTCORNER:
+              mitreCutPos.y = -length / 2;
+              mitreCutRot.z = -config.angle;
+
+              break;
+          }
+
+          const discGeometry = new THREE.BoxGeometry(
+            (width * 2) / Math.cos(config.angle),
+            width * Math.cos(Math.PI / 2 - config.angle),
+            boxThickness
+          );
+          const discMaterial = new THREE.MeshStandardMaterial();
+
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
+
+          discMesh.userData.id = mitreCutId;
+          discMesh.rotation.set(0, 0, mitreCutRot.z);
+          discMesh.position.set(0, mitreCutPos.y, 0);
+
+          discMesh.updateWorldMatrix();
+
+          if (config.angle !== 0 && config.direction !== "") {
+            discs.push({
+              id: mitreCutId,
+              mesh: discMesh,
+              location: config.location,
+              angle: config.angle,
+            });
+
+            const updatedBrushes = brushes.filter(
+              (item) => item.userData.id !== mitreCutId
+            );
+            brushes = updatedBrushes;
+
+            brushes.push(discMesh);
+            updateCSG();
+          }
+        }
+
+        // Edit Mitre Cut
+        function editMitreCut(mitreCutId, options = {}) {
+          addMitreCut(mitreCutId, { ...options });
+        }
+
+        // Remove Mitre Cut
+        function deleteMitreCut(mitreCutId) {
+          const updatedBrushes = brushes.filter(
+            (item) => item.userData.id !== mitreCutId
+          );
+          brushes = updatedBrushes;
 
           updateCSG();
         }
@@ -1474,6 +1798,13 @@
           addMoulding: addMoulding,
           editMoulding: editMoulding,
           deleteMoulding: deleteMoulding,
+          addBevelCut: addBevelCut,
+          editBevelCut: editBevelCut,
+          deleteBevelCut: deleteBevelCut,
+          DIRECTIONS: DIRECTIONS,
+          addMitreCut: addMitreCut,
+          editMitreCut: editMitreCut,
+          deleteMitreCut: deleteMitreCut,
         };
       })();
 
@@ -1566,7 +1897,7 @@
           }
         });
 
-      const container = document.getElementById("cutouts-container"),
+      const cutoutsContainer = document.getElementById("cutouts-container"),
         holesInput = document.getElementById("cutout-holes-data"),
         cutoutCircles = {},
         DEFAULT_CUTOUT = { top: 100, left: 100, diameter: 30 };
@@ -1609,7 +1940,7 @@
 
       function addCutout(data = DEFAULT_CUTOUT) {
         const id = Date.now().toString();
-        container.insertAdjacentHTML(
+        cutoutsContainer.insertAdjacentHTML(
           "beforeend",
           `
                 <div class="cutout-item" data-cutout-id="${id}">
@@ -1620,7 +1951,7 @@
                             <option value="60">60mm</option>
                             <option value="40">40mm</option>
                         </select>
-                        <button type="button" class="btn btn-danger remove-cutout"><i class="bi bi-x-lg"></i></button>
+                        <button type="button" class="btn btn-danger remove-cutout">Delete</button>
                     </div>
                 </div>
             `
@@ -1640,7 +1971,7 @@
 
         document.getElementById("add-cutout-btn").onclick = () => addCutout();
 
-        container.addEventListener("click", (e) => {
+        cutoutsContainer.addEventListener("click", (e) => {
           if (e.target.closest(".remove-cutout")) {
             const item = e.target.closest(".cutout-item");
             removeCircle(item.dataset.cutoutId);
@@ -1649,7 +1980,7 @@
           }
         });
 
-        container.addEventListener("change", (e) => {
+        cutoutsContainer.addEventListener("change", (e) => {
           if (
             ["cutout-top", "cutout-left", "cutout-diameter"].some((cls) =>
               e.target.classList.contains(cls)
@@ -1659,6 +1990,174 @@
             removeCircle(item.dataset.cutoutId);
             renderCircle(item.dataset.cutoutId, getData(item));
             updateHoles();
+          }
+        });
+      });
+
+      const bevelcutsContainer = document.getElementById("bevels-container");
+
+      function addBevelcut() {
+        // Generate moulding Id
+        const bevelCutId =
+          Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
+        // Create a new moulding item
+        const newItem = document.createElement("div");
+        newItem.classList.add("bevel-cut-item");
+        newItem.dataset.bevelCutId = bevelCutId; // Unique ID
+
+        newItem.innerHTML = `
+          <div class="input-group mb-2">
+              <select class="form-select cut-location" id="bevel-location">
+                  <option value="">Edge</option>
+                  <option value="top">Top Edge</option>
+                  <option value="left">Left Edge</option>
+                  <option value="right">Right Edge</option>
+                  <option value="bottom">Bottom Edge</option>
+              </select>
+              <select class="form-select cut-direction" id="bevel-direction">
+                  <option value="">Direction</option>
+                  <option value="inward">Inward</option>
+                  <option value="outward">Outward</option>
+              </select>
+              <select class="form-select cut-angle" id="bevel-angle">
+                  <option value="">Angle</option>
+                  <option value="15">15°</option>
+                  <option value="22.5">22.5°</option>
+                  <option value="30">30°</option>
+                  <option value="45">45°</option>
+              </select>
+              <button type="button" class="btn btn-danger remove-bevel-cut" id="delete-moulding-btn">
+                  Delete
+              </button>
+          </div>
+      `;
+
+        // Append new item to container
+        bevelcutsContainer.appendChild(newItem);
+
+        const defaultValues = {
+          edge: "",
+          direction: "",
+          angle: 0,
+        };
+
+        BoxModel.addBevelCut(bevelCutId, defaultValues);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("add-bevelcut-btn").onclick = () =>
+          addBevelcut();
+
+        bevelcutsContainer.addEventListener("click", (e) => {
+          if (e.target.closest(".remove-bevel-cut")) {
+            const item = e.target.closest(".bevel-cut-item");
+            const bevelCutId = item.dataset.bevelCutId;
+
+            BoxModel.deleteBevelCut(bevelCutId);
+
+            item.remove();
+          }
+        });
+
+        bevelcutsContainer.addEventListener("change", (e) => {
+          if (
+            ["cut-location", "cut-direction", "cut-angle"].some((cls) =>
+              e.target.classList.contains(cls)
+            )
+          ) {
+            const item = e.target.closest(".bevel-cut-item");
+
+            const bevelCutId = item.dataset.bevelCutId;
+            const bevelLocation = item.querySelector(".cut-location")?.value;
+            const bevelDirection = item.querySelector(".cut-direction")?.value;
+            const bevelAngle = item.querySelector(".cut-angle")?.value;
+
+            BoxModel.editBevelCut(bevelCutId, {
+              edge: bevelLocation,
+              direction: bevelDirection,
+              angle: (bevelAngle * Math.PI) / 180,
+            });
+          }
+        });
+      });
+
+      const mitreCutContainer = document.getElementById("mitre-cut-container");
+
+      function addMitreCut() {
+        // Generate moulding Id
+        const mitreCutId =
+          Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
+        // Create a new moulding item
+        const newItem = document.createElement("div");
+        newItem.classList.add("mitre-cut-item");
+        newItem.dataset.mitreCutId = mitreCutId; // Unique ID
+
+        newItem.innerHTML = `
+          <div class="input-group mb-2">
+              <select class="form-select cut-location" id="mitre-location">
+                  <option value="">Corner</option>
+                  <option value="top-left">Top Left Corner</option>
+                  <option value="top-right">Top Right Corner</option>
+                  <option value="bottom-left">Bottom Left Corner</option>
+                  <option value="bottom-right">Bottom Right Corner</option>
+              </select>
+              <select class="form-select cut-angle">
+                  <option value="">Angle</option>
+                  <option value="15">15°</option>
+                  <option value="22.5">22.5°</option>
+                  <option value="30">30°</option>
+                  <option value="45">45°</option>
+              </select>
+              <button type="button" class="btn btn-danger remove-mitre-cut" id="delete-moulding-btn">
+                  Delete
+              </button>
+          </div>
+      `;
+
+        // Append new item to container
+        mitreCutContainer.appendChild(newItem);
+
+        const defaultValues = {
+          location: "",
+          angle: 0,
+        };
+
+        BoxModel.addMitreCut(mitreCutId, defaultValues);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("add-mitrecut-btn").onclick = () =>
+          addMitreCut();
+
+        mitreCutContainer.addEventListener("click", (e) => {
+          if (e.target.closest(".remove-mitre-cut")) {
+            const item = e.target.closest(".mitre-cut-item");
+            const mitreCutId = item.dataset.mitreCutId;
+
+            BoxModel.deleteMitreCut(mitreCutId);
+
+            item.remove();
+          }
+        });
+
+        mitreCutContainer.addEventListener("change", (e) => {
+          if (
+            ["cut-location", "cut-angle"].some((cls) =>
+              e.target.classList.contains(cls)
+            )
+          ) {
+            const item = e.target.closest(".mitre-cut-item");
+
+            const mitreCutId = item.dataset.mitreCutId;
+            const mitreLocation = item.querySelector(".cut-location")?.value;
+            const mitreAngle = item.querySelector(".cut-angle")?.value;
+
+            BoxModel.editMitreCut(mitreCutId, {
+              location: mitreLocation,
+              angle: (mitreAngle * Math.PI) / 180,
+            });
           }
         });
       });
