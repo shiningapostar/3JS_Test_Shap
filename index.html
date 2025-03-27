@@ -69,6 +69,9 @@
             <select id="model-thickness" class="form-select">
               <option value="25.4">25.4mm</option>
               <option value="15.875">15.875mm</option>
+              <option value="100">100mm</option>
+              <option value="200">200mm</option>
+              <option value="300">300mm</option>
             </select>
           </div>
         </div>
@@ -176,6 +179,7 @@
       import * as threeBvhCsg from "https://cdn.jsdelivr.net/npm/three-bvh-csg@0.0.16/+esm";
 
       let csgEvaluator = new threeBvhCsg.Evaluator();
+      csgEvaluator.useGroup = true;
 
       // Create a global model module using an immediately invoked function expression (IIFE)
       const BoxModel = (function () {
@@ -198,6 +202,8 @@
         let brushes = [];
         let mouldingData = [];
         let holesData = [];
+        let bevelCutsData = [];
+        let mitreCutsData = [];
 
         // ...existing code...
 
@@ -767,9 +773,44 @@
             addLabelsToBox(["Right", "Left", "Top", "Bottom", "Front", "Back"]);
           }
 
-          updateCSG();
+          // Update csg meshes
+          updateCSGMeshes("moulding");
+          updateCSGMeshes("bevelCut");
+          updateCSGMeshes("mitreCut");
+
           updateCameraPosition(true);
           return cube;
+        }
+
+        // Update CSG meshes
+        function updateCSGMeshes(target) {
+          if (target === "moulding") {
+            // Update mouldings
+            mouldingData.forEach((item) => {
+              editMoulding("face", item.face, item.id);
+              editMoulding("topDistance", item.topDistance, item.id);
+              editMoulding("shapeId", item.shapeId, item.id);
+            });
+          }
+          if (target === "bevelCut") {
+            // Update Bevel Cuts
+            bevelCutsData.forEach((item) => {
+              editBevelCut(item.id, {
+                edge: item.edge,
+                direction: item.direction,
+                angle: item.angle,
+              });
+            });
+          }
+          if (target === "mitreCut") {
+            // Update Mitre Cuts
+            mitreCutsData.forEach((item) =>
+              editMitreCut(item.id, {
+                location: item.location,
+                angle: item.angle,
+              })
+            );
+          }
         }
 
         // Update face texture using string key
@@ -813,6 +854,11 @@
                 }
               }
 
+              // Update csg meshes
+              updateCSGMeshes("moulding");
+              updateCSGMeshes("bevelCut");
+              updateCSGMeshes("mitreCut");
+
               renderer.render(scene, camera);
 
               if (callback && typeof callback === "function") {
@@ -832,6 +878,11 @@
                   resultObject.material.needsUpdate = true;
                 }
               }
+
+              // Update csg meshes
+              updateCSGMeshes("moulding");
+              updateCSGMeshes("bevelCut");
+              updateCSGMeshes("mitreCut");
 
               if (callback && typeof callback === "function") {
                 callback(materials[faceIndex]);
@@ -1025,193 +1076,6 @@
           });
         }
 
-        function addMouldingItem(face, options = {}) {
-          // Default options for positioning
-          const defaults = {
-            face: FACES.RIGHT,
-            topDistance: 25.4,
-            shapeId: "shape0",
-          };
-
-          // Merge provided options with defaults
-          const config = { ...defaults, ...options, face: face };
-
-          // Get current dimensions
-          const { length, width, thickness } = dims;
-
-          // Get shape dims
-          let currentShapeDims;
-          if (config.shapeId) {
-            currentShapeDims = getShapeDimsById(config.shapeId);
-          } else {
-            currentShapeDims = { width: 0 };
-          }
-
-          // Get moulding length
-          let mouldingLength = 0;
-          switch (face) {
-            case FACES.FRONT: // +Z
-              mouldingLength = 0;
-              break;
-
-            case FACES.BACK: // -Z
-              mouldingLength = 0;
-              break;
-
-            case FACES.RIGHT: // +X
-              mouldingLength = length;
-              break;
-
-            case FACES.LEFT: // -X
-              mouldingLength = length;
-              break;
-
-            case FACES.TOP: // +Y
-              mouldingLength = width;
-              break;
-
-            case FACES.BOTTOM: // -Y
-              mouldingLength = width;
-              break;
-          }
-
-          const extrudeSettings = {
-            steps: 5,
-            depth: mouldingLength,
-            bevelEnabled: false,
-            curveSegments: 200,
-          };
-
-          // Create a cylinder geometry with equal top and bottom radius
-          const discGeometry = new THREE.ExtrudeGeometry(
-            getShapeById(config.shapeId),
-            extrudeSettings
-          );
-
-          // Create a material
-          let discMaterial;
-          switch (face) {
-            case FACES.FRONT: // +Z
-              discMaterial = materials[4];
-              break;
-
-            case FACES.BACK: // -Z
-              discMaterial = materials[5];
-              break;
-
-            case FACES.RIGHT: // +X
-              discMaterial = materials[0];
-              break;
-
-            case FACES.LEFT: // -X
-              discMaterial = materials[1];
-              break;
-
-            case FACES.TOP: // +Y
-              discMaterial = materials[2];
-              break;
-
-            case FACES.BOTTOM: // -Y
-              discMaterial = materials[3];
-              break;
-          }
-
-          // Create the mesh
-          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
-
-          // Calculate position based on face, millimeter coordinates, and dimensions
-          const position = [0, 0, 0];
-
-          // Calculate actual position based on face and millimeter measurements
-          switch (face) {
-            case FACES.FRONT: // +Z
-              // For front face: origin at top-left, X increases right, Y increases down
-              position[0] = -width / 2 + config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = thickness / 2 + config.zOffset;
-              discMesh.rotation.x = Math.PI / 2;
-              break;
-
-            case FACES.BACK: // -Z
-              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
-              position[0] = width / 2 - config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = -thickness / 2 - config.zOffset;
-              discMesh.rotation.x = -Math.PI / 2;
-              break;
-
-            case FACES.RIGHT: // +X
-              // For right face: origin at top-front, X increases toward back, Y increases down
-              position[0] = width / 2;
-              position[1] = length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.x = Math.PI / 2;
-              break;
-
-            case FACES.LEFT: // -X
-              // For left face: origin at top-back, X increases toward front, Y increases down
-              position[0] = -width / 2;
-              position[1] = -length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.x = -Math.PI / 2;
-              discMesh.rotation.z = Math.PI;
-              break;
-
-            case FACES.TOP: // +Y
-              // For top face: origin at back-left, X increases right, Y increases forward
-              position[0] = -width / 2;
-              position[1] = length / 2;
-              position[2] =
-                config.topDistance / 2 +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              // Default rotation works for top face
-              discMesh.rotation.z = Math.PI / 2;
-              discMesh.rotation.y = Math.PI / 2;
-              break;
-
-            case FACES.BOTTOM: // -Y
-              // For bottom face: origin at front-left, X increases right, Y increases backward
-              position[0] = -width / 2;
-              position[1] = -length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.y = Math.PI / 2;
-              discMesh.rotation.z = -Math.PI / 2;
-              break;
-          }
-
-          // Set position
-          discMesh.position.set(...position);
-          discMesh.updateWorldMatrix();
-
-          // Add to scene
-          // scene.add(discMesh);
-
-          // Store the disc for later reference
-          const discId =
-            Date.now().toString() + Math.random().toString(36).substr(2, 9);
-          discs.push({
-            id: discId,
-            mesh: discMesh,
-            face: config.face,
-            topMM: config.topMM,
-            leftMM: config.leftMM,
-          });
-
-          brushes.push(discMesh);
-
-          // Render the scene
-          // renderer.render(scene, camera);
-
-          // Return the disc's ID so it can be removed later
-          return discId;
-        }
-
         function updateCSG() {
           if (brushes.length > 0) {
             let finalBrush = brushes[0];
@@ -1268,12 +1132,54 @@
           return brushBox.intersectsBox(cubeBox);
         }
 
+        function generateShape(shapeId, shapeWidth, shapeHeight) {
+          let shape = [[]];
+          const basicLength = 40;
+
+          switch (shapeId) {
+            case "shape16":
+              shape = [
+                [0, shapeWidth / 2],
+                [0, basicLength / 2],
+                [shapeHeight, basicLength / 2],
+                [shapeHeight, -basicLength / 2],
+                [0, -basicLength / 2],
+                [0, -shapeWidth / 2],
+                [-shapeHeight, -shapeWidth / 2],
+                [-shapeHeight, shapeWidth / 2],
+              ];
+              break;
+
+            case "shape17":
+              shape = [
+                [0, shapeWidth / 2],
+                [-shapeHeight, shapeWidth / 2],
+                [-shapeHeight, basicLength / 2],
+                [10, basicLength / 2],
+                [10, -basicLength / 2],
+                [-shapeHeight, -basicLength / 2],
+                [-shapeHeight, -shapeWidth / 2],
+                [0, -shapeWidth / 2],
+              ];
+              break;
+
+            default:
+              break;
+          }
+
+          console.log("shapepoints: ", shape);
+
+          return createShape(shape);
+        }
+
         function addMoulding(mouldingId, face, options = {}) {
           const defaults = {
             mouldingId: "",
             face: "",
             topDistance: 0,
             shapeId: "",
+            shapeWidth: 0,
+            shapeHeight: 0,
           };
 
           const config = {
@@ -1282,6 +1188,8 @@
             mouldingId: mouldingId,
             face: face,
           };
+
+          console.log("config: ", config);
 
           // Get current dimensions
           const { length, width, thickness } = dims;
@@ -1296,29 +1204,160 @@
 
           // Get moulding length
           let mouldingLength = 0;
+
+          // Create a material
+          let discMaterial;
+
+          // Calculate position based on face, millimeter coordinates, and dimensions
+          const position = [0, 0, 0];
+          const rotation = [0, 0, 0];
+
+          // Calculate actual position based on face and millimeter measurements
           switch (face) {
             case FACES.FRONT: // +Z
+              // For front face: origin at top-left, X increases right, Y increases down
+              position[0] = -width / 2 + config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = thickness / 2 + config.zOffset;
+              rotation[0] = Math.PI / 2;
+
               mouldingLength = 0;
+              discMaterial = materials[4];
               break;
 
             case FACES.BACK: // -Z
+              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
+              position[0] = width / 2 - config.leftMM;
+              position[1] = length / 2 - config.topMM;
+              position[2] = -thickness / 2 - config.zOffset;
+              rotation[0] = -Math.PI / 2;
+
               mouldingLength = 0;
+              discMaterial = materials[5];
               break;
 
             case FACES.RIGHT: // +X
+              // For right face: origin at top-front, X increases toward back, Y increases down
+              position[0] = width / 2;
+              position[1] = length / 2;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              rotation[0] = Math.PI / 2;
+
               mouldingLength = length;
+              discMaterial = materials[0];
               break;
 
             case FACES.LEFT: // -X
+              // For left face: origin at top-back, X increases toward front, Y increases down
+              position[0] = -width / 2;
+              position[1] = -length / 2;
+              position[2] =
+                -config.topDistance +
+                (dims.thickness / 2 - currentShapeDims.width / 2);
+              rotation[0] = -Math.PI / 2;
+              rotation[2] = Math.PI;
+
               mouldingLength = length;
+              discMaterial = materials[1];
               break;
 
             case FACES.TOP: // +Y
+              const topLeftMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "top-left"
+              );
+              const topRightMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "top-right"
+              );
+
               mouldingLength = width;
+              discMaterial = materials[2];
+
+              if (topLeftMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(topLeftMitreCuts[0].angle)) * 1.2;
+
+                position[0] = width / 2;
+                position[1] = length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+
+                rotation[0] = Math.PI / 2;
+                rotation[1] = -Math.PI / 2 + topLeftMitreCuts[0].angle;
+                rotation[2] = Math.PI;
+              } else if (topRightMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(topRightMitreCuts[0].angle)) * 1.2;
+
+                position[0] = -width / 2;
+                position[1] = length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+
+                rotation[0] = Math.PI / 2;
+                rotation[1] = Math.PI / 2 - topRightMitreCuts[0].angle;
+              } else {
+                position[0] = -width / 2;
+                position[1] = length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+
+                rotation[1] = Math.PI / 2;
+                rotation[2] = Math.PI / 2;
+              }
               break;
 
             case FACES.BOTTOM: // -Y
-              mouldingLength = width;
+              const bottomLeftMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "bottom-left"
+              );
+              const bottomRightMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "bottom-right"
+              );
+
+              if (bottomLeftMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(bottomLeftMitreCuts[0].angle)) * 1.2;
+
+                position[0] = -width / 2;
+                position[1] = -length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+
+                rotation[0] = -Math.PI / 2;
+                rotation[1] = Math.PI / 2 - bottomLeftMitreCuts[0].angle;
+                rotation[2] = 0;
+              } else if (bottomRightMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(bottomRightMitreCuts[0].angle)) * 1.2;
+
+                position[0] = width / 2;
+                position[1] = -length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+
+                rotation[0] = Math.PI / 2;
+                rotation[1] = -Math.PI / 2 - bottomRightMitreCuts[0].angle;
+                rotation[2] = 0;
+              } else {
+                mouldingLength = width;
+
+                position[0] = -width / 2;
+                position[1] = -length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - currentShapeDims.width / 2);
+                rotation[1] = Math.PI / 2;
+                rotation[2] = -Math.PI / 2;
+              }
+
+              discMaterial = materials[3];
               break;
           }
 
@@ -1329,118 +1368,52 @@
             curveSegments: 200,
           };
 
-          // Create a cylinder geometry with equal top and bottom radius
-          const discGeometry = new THREE.ExtrudeGeometry(
-            getShapeById(config.shapeId),
-            extrudeSettings
+          // Generate shape
+          const shape = generateShape(
+            config.shapeId,
+            config.shapeWidth,
+            config.shapeHeight
           );
 
-          // Create a material
-          let discMaterial;
-          switch (face) {
-            case FACES.FRONT: // +Z
-              discMaterial = materials[4];
-              break;
+          console.log("shape: ", shape);
+          console.log("oldShape", getShapeById(config.shapeId));
 
-            case FACES.BACK: // -Z
-              discMaterial = materials[5];
-              break;
-
-            case FACES.RIGHT: // +X
-              discMaterial = materials[0];
-              break;
-
-            case FACES.LEFT: // -X
-              discMaterial = materials[1];
-              break;
-
-            case FACES.TOP: // +Y
-              discMaterial = materials[2];
-              break;
-
-            case FACES.BOTTOM: // -Y
-              discMaterial = materials[3];
-              break;
-          }
+          // Create a cylinder geometry with equal top and bottom radius
+          const discGeometry = new THREE.ExtrudeGeometry(
+            // getShapeById(config.shapeId),
+            shape,
+            extrudeSettings
+          );
 
           // Create the mesh
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
           discMesh.userData.id = mouldingId;
 
-          // Calculate position based on face, millimeter coordinates, and dimensions
-          const position = [0, 0, 0];
-
-          // Calculate actual position based on face and millimeter measurements
-          switch (face) {
-            case FACES.FRONT: // +Z
-              // For front face: origin at top-left, X increases right, Y increases down
-              position[0] = -width / 2 + config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = thickness / 2 + config.zOffset;
-              discMesh.rotation.x = Math.PI / 2;
-              break;
-
-            case FACES.BACK: // -Z
-              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
-              position[0] = width / 2 - config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = -thickness / 2 - config.zOffset;
-              discMesh.rotation.x = -Math.PI / 2;
-              break;
-
-            case FACES.RIGHT: // +X
-              // For right face: origin at top-front, X increases toward back, Y increases down
-              position[0] = width / 2;
-              position[1] = length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.x = Math.PI / 2;
-              break;
-
-            case FACES.LEFT: // -X
-              // For left face: origin at top-back, X increases toward front, Y increases down
-              position[0] = -width / 2;
-              position[1] = -length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.x = -Math.PI / 2;
-              discMesh.rotation.z = Math.PI;
-              break;
-
-            case FACES.TOP: // +Y
-              // For top face: origin at back-left, X increases right, Y increases forward
-              position[0] = -width / 2;
-              position[1] = length / 2;
-              position[2] =
-                config.topDistance / 2 +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              // Default rotation works for top face
-              discMesh.rotation.z = Math.PI / 2;
-              discMesh.rotation.y = Math.PI / 2;
-              break;
-
-            case FACES.BOTTOM: // -Y
-              // For bottom face: origin at front-left, X increases right, Y increases backward
-              position[0] = -width / 2;
-              position[1] = -length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
-              discMesh.rotation.y = Math.PI / 2;
-              discMesh.rotation.z = -Math.PI / 2;
-              break;
-          }
-
           // Set position
           discMesh.position.set(...position);
+          discMesh.rotation.set(...rotation);
+
+          // discMesh.rotation.set(Math.PI / 2, Math.PI / 2 - Math.PI / 6, 0);
+          // discMesh.position.set(-width / 2, length / 2, 0);
           discMesh.updateWorldMatrix();
 
           // Store the disc for later reference
           discs.push({
             id: mouldingId,
             mesh: discMesh,
+            face: config.face,
+            topDistance: config.topDistance,
+            shapeId: config.shapeId,
+            shapeWidth: config.shapeWidth,
+            shapeHeight: config.shapeHeight,
+          });
+
+          const updatedMouldingsData = mouldingData.filter(
+            (item) => item.id !== mouldingId
+          );
+          mouldingData = updatedMouldingsData;
+          mouldingData.push({
+            id: mouldingId,
             face: config.face,
             topDistance: config.topDistance,
             shapeId: config.shapeId,
@@ -1451,9 +1424,15 @@
           );
           brushes = updatedBrushes;
 
-          brushes.push(discMesh);
+          // scene.add(discMesh);
 
-          updateCSG();
+          if (config.shapeWidth > 0 && config.shapeHeight > 0) {
+            if (Math.abs(discMesh.position.z) < thickness / 2) {
+              brushes.push(discMesh);
+            }
+
+            updateCSG();
+          }
         }
 
         function editMoulding(target, value, id) {
@@ -1467,6 +1446,8 @@
               addMoulding(disc.id, value, {
                 topDistance: disc.topDistance,
                 shapeId: disc.shapeId,
+                shapeWidth: disc.shapeWidth,
+                shapeHeight: disc.shapeHeight,
               });
 
               break;
@@ -1476,6 +1457,8 @@
               addMoulding(disc.id, disc.face, {
                 topDistance: parseFloat(value),
                 shapeId: disc.shapeId,
+                shapeWidth: disc.shapeWidth,
+                shapeHeight: disc.shapeHeight,
               });
               break;
             case "shapeId":
@@ -1484,6 +1467,41 @@
               addMoulding(disc.id, disc.face, {
                 topDistance: disc.topDistance,
                 shapeId: value,
+                shapeWidth: disc.shapeWidth,
+                shapeHeight: disc.shapeHeight,
+              });
+              break;
+
+            case "shapeWidth":
+              discs = updateDiscs;
+
+              addMoulding(disc.id, disc.face, {
+                topDistance: disc.topDistance,
+                shapeId: disc.shapeId,
+                shapeWidth: parseFloat(value),
+                shapeHeight: disc.shapeHeight,
+              });
+              break;
+
+            case "shapeHeight":
+              discs = updateDiscs;
+
+              addMoulding(disc.id, disc.face, {
+                topDistance: disc.topDistance,
+                shapeId: disc.shapeId,
+                shapeWidth: disc.shapeWidth,
+                shapeHeight: parseFloat(value),
+              });
+              break;
+
+            case "shapeDepth":
+              discs = updateDiscs;
+
+              addMoulding(disc.id, disc.face, {
+                topDistance: disc.topDistance,
+                shapeId: disc.shapeId,
+                shapeWidth: disc.shapeWidth,
+                shapeHeight: disc.shapeHeight,
               });
               break;
 
@@ -1521,14 +1539,19 @@
 
           // Get moulding length
           let bevelCutLength = 0;
+          let discMaterial = new THREE.MeshStandardMaterial({});
 
           let bevelCutDims = { x: 0, y: 0, z: 0 };
           let bevelCutPos = { x: 0, y: 0, z: 0 };
           let bevelCutRot = { x: 0, y: 0, z: 0 };
 
+          let bevelGroupPos = { x: 0, y: 0, z: 0 };
+          let bevelGroupRot = { x: 0, y: 0, z: 0 };
+
           switch (config.edge) {
             case FACES.RIGHT: // +X
               bevelCutLength = length;
+              discMaterial = materials[0].clone();
 
               bevelCutDims.x = boxThickness * 2 * Math.sin(Math.PI / 6);
               bevelCutDims.y = length * 2;
@@ -1552,14 +1575,15 @@
 
             case FACES.LEFT: // -X
               bevelCutLength = length;
+              discMaterial = materials[1].clone();
 
-              bevelCutDims.x = boxThickness * 2 * Math.sin(Math.PI / 6);
+              bevelCutDims.x = boxThickness * 2 * Math.sin(config.angle);
               bevelCutDims.y = length * 2;
-              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(config.angle);
 
               bevelCutPos.x = -(
                 width / 2 +
-                boxThickness / 4 / Math.cos(Math.PI / 6) -
+                boxThickness / 4 / Math.cos(config.angle) -
                 1
               );
 
@@ -1578,13 +1602,32 @@
 
             case FACES.TOP: // +Y
               bevelCutLength = width;
+              discMaterial = materials[2].clone();
 
               bevelCutDims.x = width * 2;
-              bevelCutDims.y = boxThickness * 2 * Math.sin(Math.PI / 6);
-              bevelCutDims.z = (boxThickness * 2) / Math.cos(Math.PI / 6);
+              bevelCutDims.y = boxThickness * 2 * Math.sin(config.angle);
+              bevelCutDims.z = (boxThickness * 2) / Math.cos(config.angle);
 
               bevelCutPos.y =
-                length / 2 + boxThickness / 4 / Math.cos(Math.PI / 6) - 1;
+                length / 2 + boxThickness / 4 / Math.cos(config.angle) - 1;
+
+              const topLeftMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "top-left"
+              );
+              const topRightMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "top-right"
+              );
+              if (topLeftMitreCuts.length > 0) {
+                bevelGroupRot.z = topLeftMitreCuts[0].angle;
+                bevelGroupPos.y =
+                  (width / 2 / Math.cos(topLeftMitreCuts[0].angle)) *
+                  Math.sin(topLeftMitreCuts[0].angle);
+              } else if (topRightMitreCuts.length > 0) {
+                bevelGroupRot.z = -topRightMitreCuts[0].angle;
+                bevelGroupPos.y =
+                  (width / 2 / Math.cos(topRightMitreCuts[0].angle)) *
+                  Math.sin(topRightMitreCuts[0].angle);
+              }
 
               switch (config.direction) {
                 case DIRECTIONS.INWARD:
@@ -1605,6 +1648,7 @@
 
             case FACES.BOTTOM: // -Y
               bevelCutLength = width;
+              discMaterial = materials[3].clone();
 
               bevelCutDims.x = width * 2;
               bevelCutDims.y = boxThickness * 2 * Math.sin(Math.PI / 6);
@@ -1615,6 +1659,24 @@
                 boxThickness / 4 / Math.cos(Math.PI / 6) -
                 1
               );
+
+              const bottomLeftMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "bottom-left"
+              );
+              const bottomRightMitreCuts = mitreCutsData.filter(
+                (item) => item.location === "bottom-right"
+              );
+              if (bottomLeftMitreCuts.length > 0) {
+                bevelGroupRot.z = bottomLeftMitreCuts[0].angle;
+                bevelGroupPos.y =
+                  -(width / 2 / Math.cos(bottomLeftMitreCuts[0].angle)) *
+                  Math.sin(bottomLeftMitreCuts[0].angle);
+              } else if (bottomRightMitreCuts.length > 0) {
+                bevelGroupRot.z = -bottomRightMitreCuts[0].angle;
+                bevelGroupPos.y =
+                  -(width / 2 / Math.cos(bottomRightMitreCuts[0].angle)) *
+                  Math.sin(bottomRightMitreCuts[0].angle);
+              }
 
               switch (config.direction) {
                 case DIRECTIONS.INWARD:
@@ -1639,13 +1701,22 @@
             bevelCutDims.y,
             bevelCutDims.z
           );
-          const discMaterial = new THREE.MeshStandardMaterial();
 
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
-          discMesh.position.set(bevelCutPos.x, bevelCutPos.y, bevelCutPos.z);
+
+          const group = new THREE.Group();
+          group.add(discMesh);
+          group.position.set(
+            bevelCutPos.x,
+            bevelCutPos.y - bevelGroupPos.y,
+            bevelCutPos.z
+          );
+
+          group.rotation.set(0, 0, bevelGroupRot.z);
+
+          group.updateMatrixWorld(true);
+
           discMesh.rotation.set(bevelCutRot.x, bevelCutRot.y, bevelCutRot.z);
-          discMesh.userData.id = bevelCutId;
-          discMesh.updateWorldMatrix();
 
           if (
             config.direction !== "" &&
@@ -1660,12 +1731,41 @@
               angle: config.angle,
             });
 
+            const updatedBevelCutsData = bevelCutsData.filter(
+              (item) => item.id !== bevelCutId
+            );
+            bevelCutsData = updatedBevelCutsData;
+            bevelCutsData.push({
+              id: bevelCutId,
+              edge: config.edge,
+              direction: config.direction,
+              angle: config.angle,
+            });
+
             const updatedBrushes = brushes.filter(
               (item) => item.userData.id !== bevelCutId
             );
             brushes = updatedBrushes;
 
-            brushes.push(discMesh);
+            // scene.add(group);
+
+            group.traverse((child) => {
+              if (child.isMesh && child.geometry) {
+                child.updateWorldMatrix(true, false);
+
+                const geometry = child.geometry.clone();
+                geometry.applyMatrix4(child.matrixWorld);
+
+                const mesh = new threeBvhCsg.Brush(
+                  geometry,
+                  child.material.clone()
+                );
+                mesh.userData.id = bevelCutId;
+
+                brushes.push(mesh);
+              }
+            });
+
             updateCSG();
           }
         }
@@ -1707,24 +1807,24 @@
 
           switch (config.location) {
             case LOCATIONS.TOPLEFTCORNER:
-              mitreCutPos.y = length / 2;
+              mitreCutPos.y = length / 2 - 0.01;
               mitreCutRot.z = config.angle;
               break;
 
             case LOCATIONS.TOPRIGHTCORNER:
-              mitreCutPos.y = length / 2;
+              mitreCutPos.y = length / 2 - 0.01;
               mitreCutRot.z = -config.angle;
 
               break;
 
             case LOCATIONS.BOTTOMLEFTCORNER:
-              mitreCutPos.y = -length / 2;
+              mitreCutPos.y = -length / 2 + 0.01;
               mitreCutRot.z = config.angle;
 
               break;
 
             case LOCATIONS.BOTTOMRIGHTCORNER:
-              mitreCutPos.y = -length / 2;
+              mitreCutPos.y = -length / 2 + 0.01;
               mitreCutRot.z = -config.angle;
 
               break;
@@ -1735,13 +1835,33 @@
             width * Math.cos(Math.PI / 2 - config.angle),
             boxThickness
           );
-          const discMaterial = new THREE.MeshStandardMaterial();
+
+          // Create a material
+          let discMaterial = new THREE.MeshStandardMaterial();
+
+          switch (config.location) {
+            case LOCATIONS.TOPLEFTCORNER: // +Y
+              discMaterial = materials[2].clone();
+              break;
+
+            case LOCATIONS.TOPRIGHTCORNER: // +Y
+              discMaterial = materials[2].clone();
+              break;
+
+            case LOCATIONS.BOTTOMLEFTCORNER: // -Y
+              discMaterial = materials[3].clone();
+              break;
+
+            case LOCATIONS.BOTTOMRIGHTCORNER: // -Y
+              discMaterial = materials[3].clone();
+              break;
+          }
 
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
 
           discMesh.userData.id = mitreCutId;
-          discMesh.rotation.set(0, 0, mitreCutRot.z);
-          discMesh.position.set(0, mitreCutPos.y, 0);
+          discMesh.rotation.set(mitreCutRot.x, mitreCutRot.y, mitreCutRot.z);
+          discMesh.position.set(mitreCutPos.x, mitreCutPos.y, mitreCutPos.z);
 
           discMesh.updateWorldMatrix();
 
@@ -1749,6 +1869,16 @@
             discs.push({
               id: mitreCutId,
               mesh: discMesh,
+              location: config.location,
+              angle: config.angle,
+            });
+
+            const updatedMitreCuts = mitreCutsData.filter(
+              (item) => item.id !== mitreCutId
+            );
+            mitreCutsData = updatedMitreCuts;
+            mitreCutsData.push({
+              id: mitreCutId,
               location: config.location,
               angle: config.angle,
             });
@@ -1766,6 +1896,8 @@
         // Edit Mitre Cut
         function editMitreCut(mitreCutId, options = {}) {
           addMitreCut(mitreCutId, { ...options });
+          updateCSGMeshes("moulding");
+          updateCSGMeshes("bevelCut");
         }
 
         // Remove Mitre Cut
@@ -1871,6 +2003,8 @@
                   <option value="shape16">Shape 16</option>
                   <option value="shape17">Shape 17</option>
               </select>
+              <input type="number" placeholder="Shape Width" class="form-control shape-width"  onchange="BoxModel.editMoulding('shapeWidth', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
+              <input type="number" placeholder="Shape Height" class="form-control shape-height"  onchange="BoxModel.editMoulding('shapeHeight', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
               <button onclick="BoxModel.deleteMoulding(this.closest('.moulding-item').dataset.mouldingId)" type="button" class="btn btn-danger remove-moulding" id="delete-moulding-btn">
                   Delete
               </button>
