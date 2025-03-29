@@ -1647,6 +1647,17 @@
                   bevelCutPos.z = -bevelCutDims.z / 2;
 
                   firstGroupRot.x = -config.angle;
+
+                  secondGroupPos.y = -(
+                    (bevelCutDims.z / 2) * Math.sin(config.angle) +
+                    (-bevelCutDims.y / 2) * Math.cos(config.angle)
+                  );
+                  secondGroupPos.z = -(
+                    (bevelCutDims.z / 2) * Math.cos(config.angle) -
+                    (-bevelCutDims.y / 2) * Math.sin(config.angle)
+                  );
+                  thirdGroupPos.y = length / 2;
+                  thirdGroupPos.z = boxThickness / 2;
                   break;
 
                 case DIRECTIONS.OUTWARD:
@@ -1657,6 +1668,19 @@
                   bevelCutPos.z = bevelCutDims.z / 2;
 
                   firstGroupRot.x = config.angle;
+
+                  secondGroupPos.y = -(
+                    (-bevelCutDims.z / 2) *
+                      Math.sin(Math.PI * 2 - config.angle) +
+                    (-bevelCutDims.y / 2) * Math.cos(Math.PI * 2 - config.angle)
+                  );
+                  secondGroupPos.z = -(
+                    (-bevelCutDims.z / 2) *
+                      Math.cos(Math.PI * 2 - config.angle) -
+                    (-bevelCutDims.y / 2) * Math.sin(Math.PI * 2 - config.angle)
+                  );
+                  thirdGroupPos.y = length / 2;
+                  thirdGroupPos.z = -boxThickness / 2;
                   break;
               }
 
@@ -1669,13 +1693,9 @@
               if (topLeftMitreCuts.length > 0) {
                 thirdGroupRot.z = topLeftMitreCuts[0].angle;
                 thirdGroupPos.x = width / 2;
-                thirdGroupPos.y = length / 2;
-                thirdGroupPos.z = boxThickness / 2;
               } else if (topRightMitreCuts.length > 0) {
                 thirdGroupRot.z = -topRightMitreCuts[0].angle;
                 thirdGroupPos.x = -width / 2;
-                thirdGroupPos.y = length / 2;
-                thirdGroupPos.z = boxThickness / 2;
               }
 
               break;
@@ -1697,18 +1717,43 @@
                   bevelCutPos.y = -bevelCutDims.y / 2;
                   bevelCutPos.z = -bevelCutDims.z / 2;
 
-                  firstGroupRot.x = config.angle;
+                  firstGroupRot.x = config.angle - Math.PI / 2;
 
+                  secondGroupPos.y = -(
+                    (bevelCutDims.z / 2) *
+                      Math.sin(Math.PI * 2 - config.angle) +
+                    (bevelCutDims.y / 2) * Math.cos(Math.PI * 2 - config.angle)
+                  );
+                  secondGroupPos.z = -(
+                    (bevelCutDims.z / 2) *
+                      Math.cos(Math.PI * 2 - config.angle) -
+                    (bevelCutDims.y / 2) * Math.sin(Math.PI * 2 - config.angle)
+                  );
+
+                  thirdGroupPos.y = -length / 2;
+                  thirdGroupPos.z = boxThickness / 2;
                   break;
 
                 case DIRECTIONS.OUTWARD:
                   firstGroupPos.y = -length / 2;
-                  firstGroupPos.z = -boxThickness / 2;
+                  firstGroupPos.z = boxThickness / 2;
 
                   bevelCutPos.y = -bevelCutDims.y / 2;
-                  bevelCutPos.z = bevelCutDims.z / 2;
+                  bevelCutPos.z = -bevelCutDims.z / 2;
 
-                  firstGroupRot.x = -config.angle;
+                  firstGroupRot.x = Math.PI / 2 - config.angle;
+
+                  secondGroupPos.y = -(
+                    (-bevelCutDims.z / 2) * Math.sin(config.angle) +
+                    (bevelCutDims.y / 2) * Math.cos(config.angle)
+                  );
+                  secondGroupPos.z = -(
+                    (-bevelCutDims.z / 2) * Math.cos(config.angle) -
+                    (bevelCutDims.y / 2) * Math.sin(config.angle)
+                  );
+
+                  thirdGroupPos.y = -length / 2;
+                  thirdGroupPos.z = -boxThickness / 2;
 
                   break;
               }
@@ -1723,6 +1768,8 @@
                 thirdGroupRot.z = bottomLeftMitreCuts[0].angle;
                 thirdGroupPos.x = -width / 2;
               } else if (bottomRightMitreCuts.length > 0) {
+                thirdGroupRot.z = -bottomRightMitreCuts[0].angle;
+                thirdGroupPos.x = width / 2;
               }
 
               break;
@@ -1771,17 +1818,14 @@
           });
           const box = new THREE.Box3().setFromObject(secondGroup);
           const center = box.getCenter(new THREE.Vector3());
-          if (config.angle > 0)
-            secondGroup.position.set(
-              secondGroupPos.x - center.x,
-              -center.y -
-                ((bevelCutDims.z / 2) * Math.sin(config.angle) +
-                  (-bevelCutDims.y / 2) * Math.cos(config.angle)),
-              -(
-                (bevelCutDims.z / 2) * Math.cos(config.angle) -
-                (-bevelCutDims.y / 2) * Math.sin(config.angle)
-              ) - center.z
-            );
+
+          if (config.edge === "top" || config.edge === "bottom")
+            if (config.angle > 0)
+              secondGroup.position.set(
+                secondGroupPos.x - center.x,
+                secondGroupPos.y - center.y,
+                secondGroupPos.z - center.z
+              );
 
           // Declare third gorup
           const thirdGroup = new THREE.Group();
@@ -1801,8 +1845,6 @@
               thirdGroup.add(mesh);
             }
           });
-          // thirdGroup.position.set(0, 0, boxThickness / 2);
-          // thirdGroup.rotation.set(0, 0, Math.PI / 6);
           thirdGroup.position.set(
             thirdGroupPos.x,
             thirdGroupPos.y,
@@ -1859,12 +1901,12 @@
                 );
                 mesh.userData.id = bevelCutId;
 
-                // brushes.push(mesh);
+                brushes.push(mesh);
                 scene.add(mesh);
               }
             });
 
-            // updateCSG();
+            updateCSG();
           }
         }
 
