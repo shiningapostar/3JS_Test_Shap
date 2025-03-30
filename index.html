@@ -1000,35 +1000,51 @@
               discMaterial = materials[1];
               break;
 
-            case FACES.TOP:
-              {
-                const leftCut = discs.filter(
-                  (d) => d.type === "mitreCut" && d.location === "top-left"
-                )[0];
-                const rightCut = discs.filter(
-                  (d) => d.type === "mitreCut" && d.location === "top-right"
-                )[0];
+            case FACES.TOP: // +Y
+              const topLeftMitreCuts = discs.filter(
+                (d) => d.type === "mitreCut" && d.location === "top-left"
+              );
+              const topRightMitreCuts = discs.filter(
+                (d) => d.type === "mitreCut" && d.location === "top-right"
+              );
 
+              mouldingLength = width;
+              discMaterial = materials[2];
+
+              if (topLeftMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(topLeftMitreCuts[0].angle)) * 1.2;
+
+                position[0] = width / 2;
                 position[1] = length / 2;
-                position[2] = baseZ;
-                mouldingLength = width;
-                discMaterial = materials[2];
-                rotation[0] = Math.PI / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - config.shapeWidth / 2);
 
-                if (leftCut) {
-                  mouldingLength = (width / Math.cos(leftCut.angle)) * 1.2;
-                  position[0] = width / 2;
-                  rotation[1] = -Math.PI / 2 + leftCut.angle;
-                  rotation[2] = Math.PI;
-                } else if (rightCut) {
-                  mouldingLength = (width / Math.cos(rightCut.angle)) * 1.2;
-                  position[0] = -width / 2;
-                  rotation[1] = Math.PI / 2 - rightCut.angle;
-                } else {
-                  position[0] = -width / 2;
-                  rotation[1] = Math.PI / 2;
-                  rotation[2] = Math.PI / 2;
-                }
+                rotation[0] = Math.PI / 2;
+                rotation[1] = -Math.PI / 2 + topLeftMitreCuts[0].angle;
+                rotation[2] = Math.PI;
+              } else if (topRightMitreCuts.length > 0) {
+                mouldingLength =
+                  (width / Math.cos(topRightMitreCuts[0].angle)) * 1.2;
+
+                position[0] = -width / 2;
+                position[1] = length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - config.shapeWidth / 2);
+
+                rotation[0] = Math.PI / 2;
+                rotation[1] = Math.PI / 2 - topRightMitreCuts[0].angle;
+              } else {
+                position[0] = -width / 2;
+                position[1] = length / 2;
+                position[2] =
+                  -config.topDistance +
+                  (dims.thickness / 2 - config.shapeWidth / 2);
+
+                rotation[1] = Math.PI / 2;
+                rotation[2] = Math.PI / 2;
               }
               break;
 
