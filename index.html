@@ -597,32 +597,44 @@
 
         // Update CSG meshes
         function updateCSGMeshes(target) {
+          console.log(target, discs);
           if (target === "moulding") {
             // Update mouldings
-            mouldingData.forEach((item) => {
-              editMoulding("face", item.face, item.id);
-              editMoulding("topDistance", item.topDistance, item.id);
-              editMoulding("shapeId", item.shapeId, item.id);
-            });
-          }
-          if (target === "bevelCut") {
-            // Update Bevel Cuts
-            bevelCutsData.forEach((item) => {
-              editBevelCut(item.id, {
-                edge: item.edge,
-                direction: item.direction,
-                angle: item.angle,
-              });
-            });
-          }
-          if (target === "mitreCut") {
-            // Update Mitre Cuts
-            mitreCutsData.forEach((item) =>
-              editMitreCut(item.id, {
-                location: item.location,
-                angle: item.angle,
-              })
+            console.log(
+              "mouldings: ",
+              discs.filter((d) => d.type === "moulding")
             );
+            discs
+              .filter((d) => d.type === "moulding")
+              .forEach((item) => {
+                editMoulding(item.id, item.face, {
+                  topDistance: item.topDistance,
+                  shapeId: item.shapeId,
+                  shapeWidth: item.shapeWidth,
+                  shapeHeight: item.shapeHeight,
+                });
+              });
+          } else if (target === "bevelCut") {
+            // Update Bevel Cuts
+            discs
+              .filter((d) => d.type === "bevelCut")
+              .forEach((item) => {
+                editBevelCut(item.id, {
+                  edge: item.edge,
+                  direction: item.direction,
+                  angle: item.angle,
+                });
+              });
+          } else if (target === "mitreCut") {
+            // Update Mitre Cuts
+            discs
+              .filter((d) => d.type === "mitreCut")
+              .forEach((item) =>
+                editMitreCut(item.id, {
+                  location: item.location,
+                  angle: item.angle,
+                })
+              );
           }
         }
 
@@ -1137,23 +1149,16 @@
           discMesh.updateWorldMatrix();
 
           // Update discs list
+          discs = discs.filter((d) => d.id !== mouldingId);
           discs.push({
             id: mouldingId,
+            type: "moulding",
             mesh: discMesh,
             face: config.face,
             topDistance: config.topDistance,
             shapeId: config.shapeId,
             shapeWidth: config.shapeWidth,
             shapeHeight: config.shapeHeight,
-          });
-
-          // Update moulding data
-          mouldingData = mouldingData.filter((item) => item.id !== mouldingId);
-          mouldingData.push({
-            id: mouldingId,
-            face: config.face,
-            topDistance: config.topDistance,
-            shapeId: config.shapeId,
           });
 
           // Update brushes
@@ -1181,170 +1186,122 @@
 
         // Add bevel Cut
         function addBevelCut(bevelCutId, options = {}) {
-          // Set default values
-          const defaults = {
-            bevelCutId: "",
+          // Set default values and merge with options
+          const config = {
             edge: "",
             direction: "",
             angle: 0,
-          };
-
-          // Get values
-          const config = {
-            ...defaults,
             ...options,
-            bevelCutId: bevelCutId,
+            bevelCutId, // Ensure bevelCutId from parameter is used
           };
 
-          // Get dims of initial box
+          // Get dimensions of initial box
           const { length, width, thickness: boxThickness } = dims;
 
-          // Get moulding length
-          let bevelCutLength = 0;
+          // Initialize position and dimension objects
           let discMaterial = new THREE.MeshStandardMaterial({});
+          const bevelCutDims = { x: 0, y: 0, z: 0 };
+          const bevelCutPos = { x: 0, y: 0, z: 0 };
+          const firstGroupPos = { x: 0, y: 0, z: 0 };
+          const firstGroupRot = { x: 0, y: 0, z: 0 };
+          const secondGroupPos = { x: 0, y: 0, z: 0 };
+          const thirdGroupPos = { x: 0, y: 0, z: 0 };
+          const thirdGroupRot = { x: 0, y: 0, z: 0 };
 
-          // Declare bevel cut props
-          let bevelCutDims = { x: 0, y: 0, z: 0 };
-          let bevelCutPos = { x: 0, y: 0, z: 0 };
-          let bevelCutRot = { x: 0, y: 0, z: 0 };
-
-          // Declare first group props
-          let firstGroupPos = { x: 0, y: 0, z: 0 };
-          let firstGroupRot = { x: 0, y: 0, z: 0 };
-
-          // Declare second group props
-          let secondGroupPos = { x: 0, y: 0, z: 0 };
-          let secondGroupRot = { x: 0, y: 0, z: 0 };
-
-          // Declare third group props
-          let thirdGroupPos = { x: 0, y: 0, z: 0 };
-          let thirdGroupRot = { x: 0, y: 0, z: 0 };
-
+          // Configure dimensions and positions based on edge and direction
           switch (config.edge) {
             case FACES.RIGHT: // +X
               discMaterial = materials[0].clone();
-
               bevelCutDims.x = boxThickness * 2;
               bevelCutDims.y = length;
               bevelCutDims.z = boxThickness * 2;
+              firstGroupPos.x = width / 2;
 
-              switch (config.direction) {
-                case DIRECTIONS.INWARD:
-                  bevelCutPos.x = bevelCutDims.x / 2;
-                  bevelCutPos.z = -bevelCutDims.z / 2;
-
-                  firstGroupPos.x = width / 2;
-                  firstGroupPos.z = boxThickness / 2;
-
-                  firstGroupRot.y = config.angle;
-                  break;
-
-                case DIRECTIONS.OUTWARD:
-                  bevelCutPos.x = bevelCutDims.x / 2;
-                  bevelCutPos.z = bevelCutDims.z / 2;
-
-                  firstGroupPos.x = width / 2;
-                  firstGroupPos.z = -boxThickness / 2;
-
-                  firstGroupRot.y = -config.angle;
-
-                  break;
+              if (config.direction === DIRECTIONS.INWARD) {
+                bevelCutPos.x = bevelCutDims.x / 2;
+                bevelCutPos.z = -bevelCutDims.z / 2;
+                firstGroupPos.z = boxThickness / 2;
+                firstGroupRot.y = config.angle;
+              } else if (config.direction === DIRECTIONS.OUTWARD) {
+                bevelCutPos.x = bevelCutDims.x / 2;
+                bevelCutPos.z = bevelCutDims.z / 2;
+                firstGroupPos.z = -boxThickness / 2;
+                firstGroupRot.y = -config.angle;
               }
               break;
 
             case FACES.LEFT: // -X
               discMaterial = materials[1].clone();
-
               bevelCutDims.x = boxThickness * 2;
               bevelCutDims.y = length;
               bevelCutDims.z = boxThickness * 2;
+              firstGroupPos.x = -width / 2;
 
-              switch (config.direction) {
-                case DIRECTIONS.INWARD:
-                  bevelCutPos.x = -bevelCutDims.x / 2;
-                  bevelCutPos.z = -bevelCutDims.z / 2;
-
-                  firstGroupPos.x = -width / 2;
-                  firstGroupPos.z = boxThickness / 2;
-
-                  firstGroupRot.y = -config.angle;
-
-                  break;
-
-                case DIRECTIONS.OUTWARD:
-                  bevelCutPos.x = -bevelCutDims.x / 2;
-                  bevelCutPos.z = bevelCutDims.z / 2;
-
-                  firstGroupPos.x = -width / 2;
-                  firstGroupPos.z = -boxThickness / 2;
-
-                  firstGroupRot.y = config.angle;
-
-                  break;
+              if (config.direction === DIRECTIONS.INWARD) {
+                bevelCutPos.x = -bevelCutDims.x / 2;
+                bevelCutPos.z = -bevelCutDims.z / 2;
+                firstGroupPos.z = boxThickness / 2;
+                firstGroupRot.y = -config.angle;
+              } else if (config.direction === DIRECTIONS.OUTWARD) {
+                bevelCutPos.x = -bevelCutDims.x / 2;
+                bevelCutPos.z = bevelCutDims.z / 2;
+                firstGroupPos.z = -boxThickness / 2;
+                firstGroupRot.y = config.angle;
               }
               break;
 
             case FACES.TOP: // +Y
-              // Set material
               discMaterial = materials[2].clone();
-
-              // Set initial dims
               bevelCutDims.x = width * 4;
               bevelCutDims.y = boxThickness * 2;
               bevelCutDims.z = boxThickness * 4;
+              firstGroupPos.y = length / 2;
+              thirdGroupPos.y = length / 2;
 
-              switch (config.direction) {
-                case DIRECTIONS.INWARD:
-                  firstGroupPos.y = length / 2;
-                  firstGroupPos.z = boxThickness / 2;
+              if (config.direction === DIRECTIONS.INWARD) {
+                firstGroupPos.z = boxThickness / 2;
+                bevelCutPos.y = bevelCutDims.y / 2;
+                bevelCutPos.z = -bevelCutDims.z / 2;
+                firstGroupRot.x = -config.angle;
+                thirdGroupPos.z = boxThickness / 2;
 
-                  bevelCutPos.y = bevelCutDims.y / 2;
-                  bevelCutPos.z = -bevelCutDims.z / 2;
+                const sinAngle = Math.sin(config.angle);
+                const cosAngle = Math.cos(config.angle);
+                secondGroupPos.y = -(
+                  (bevelCutDims.z / 2) * sinAngle +
+                  (-bevelCutDims.y / 2) * cosAngle
+                );
+                secondGroupPos.z = -(
+                  (bevelCutDims.z / 2) * cosAngle -
+                  (-bevelCutDims.y / 2) * sinAngle
+                );
+              } else if (config.direction === DIRECTIONS.OUTWARD) {
+                firstGroupPos.z = -boxThickness / 2;
+                bevelCutPos.y = bevelCutDims.y / 2;
+                bevelCutPos.z = bevelCutDims.z / 2;
+                firstGroupRot.x = config.angle;
+                thirdGroupPos.z = -boxThickness / 2;
 
-                  firstGroupRot.x = -config.angle;
-
-                  secondGroupPos.y = -(
-                    (bevelCutDims.z / 2) * Math.sin(config.angle) +
-                    (-bevelCutDims.y / 2) * Math.cos(config.angle)
-                  );
-                  secondGroupPos.z = -(
-                    (bevelCutDims.z / 2) * Math.cos(config.angle) -
-                    (-bevelCutDims.y / 2) * Math.sin(config.angle)
-                  );
-                  thirdGroupPos.y = length / 2;
-                  thirdGroupPos.z = boxThickness / 2;
-                  break;
-
-                case DIRECTIONS.OUTWARD:
-                  firstGroupPos.y = length / 2;
-                  firstGroupPos.z = -boxThickness / 2;
-
-                  bevelCutPos.y = bevelCutDims.y / 2;
-                  bevelCutPos.z = bevelCutDims.z / 2;
-
-                  firstGroupRot.x = config.angle;
-
-                  secondGroupPos.y = -(
-                    (-bevelCutDims.z / 2) *
-                      Math.sin(Math.PI * 2 - config.angle) +
-                    (-bevelCutDims.y / 2) * Math.cos(Math.PI * 2 - config.angle)
-                  );
-                  secondGroupPos.z = -(
-                    (-bevelCutDims.z / 2) *
-                      Math.cos(Math.PI * 2 - config.angle) -
-                    (-bevelCutDims.y / 2) * Math.sin(Math.PI * 2 - config.angle)
-                  );
-                  thirdGroupPos.y = length / 2;
-                  thirdGroupPos.z = -boxThickness / 2;
-                  break;
+                const sinAngle = Math.sin(Math.PI * 2 - config.angle);
+                const cosAngle = Math.cos(Math.PI * 2 - config.angle);
+                secondGroupPos.y = -(
+                  (-bevelCutDims.z / 2) * sinAngle +
+                  (-bevelCutDims.y / 2) * cosAngle
+                );
+                secondGroupPos.z = -(
+                  (-bevelCutDims.z / 2) * cosAngle -
+                  (-bevelCutDims.y / 2) * sinAngle
+                );
               }
 
-              const topLeftMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "top-left"
-              );
-              const topRightMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "top-right"
-              );
+              // Handle mitre cuts
+              const topLeftMitreCuts = discs
+                .filter((d) => d.type === "mitreCut")
+                .filter((item) => item.location === "top-left");
+              const topRightMitreCuts = discs
+                .filter((d) => d.type === "mitreCut")
+                .filter((item) => item.location === "top-right");
+
               if (topLeftMitreCuts.length > 0) {
                 thirdGroupRot.z = topLeftMitreCuts[0].angle;
                 thirdGroupPos.x = width / 2;
@@ -1352,73 +1309,60 @@
                 thirdGroupRot.z = -topRightMitreCuts[0].angle;
                 thirdGroupPos.x = -width / 2;
               }
-
               break;
 
             case FACES.BOTTOM: // -Y
-              // Set material
               discMaterial = materials[3].clone();
-
-              // Set initial dims
               bevelCutDims.x = width * 4;
               bevelCutDims.y = boxThickness * 2;
               bevelCutDims.z = boxThickness * 2;
+              firstGroupPos.y = -length / 2;
+              thirdGroupPos.y = -length / 2;
 
-              switch (config.direction) {
-                case DIRECTIONS.INWARD:
-                  firstGroupPos.y = -length / 2;
-                  firstGroupPos.z = boxThickness / 2;
+              if (config.direction === DIRECTIONS.INWARD) {
+                firstGroupPos.z = boxThickness / 2;
+                bevelCutPos.y = -bevelCutDims.y / 2;
+                bevelCutPos.z = -bevelCutDims.z / 2;
+                firstGroupRot.x = config.angle - Math.PI / 2;
+                thirdGroupPos.z = boxThickness / 2;
 
-                  bevelCutPos.y = -bevelCutDims.y / 2;
-                  bevelCutPos.z = -bevelCutDims.z / 2;
+                const sinAngle = Math.sin(Math.PI * 2 - config.angle);
+                const cosAngle = Math.cos(Math.PI * 2 - config.angle);
+                secondGroupPos.y = -(
+                  (bevelCutDims.z / 2) * sinAngle +
+                  (bevelCutDims.y / 2) * cosAngle
+                );
+                secondGroupPos.z = -(
+                  (bevelCutDims.z / 2) * cosAngle -
+                  (bevelCutDims.y / 2) * sinAngle
+                );
+              } else if (config.direction === DIRECTIONS.OUTWARD) {
+                firstGroupPos.z = boxThickness / 2;
+                bevelCutPos.y = -bevelCutDims.y / 2;
+                bevelCutPos.z = -bevelCutDims.z / 2;
+                firstGroupRot.x = Math.PI / 2 - config.angle;
+                thirdGroupPos.z = -boxThickness / 2;
 
-                  firstGroupRot.x = config.angle - Math.PI / 2;
-
-                  secondGroupPos.y = -(
-                    (bevelCutDims.z / 2) *
-                      Math.sin(Math.PI * 2 - config.angle) +
-                    (bevelCutDims.y / 2) * Math.cos(Math.PI * 2 - config.angle)
-                  );
-                  secondGroupPos.z = -(
-                    (bevelCutDims.z / 2) *
-                      Math.cos(Math.PI * 2 - config.angle) -
-                    (bevelCutDims.y / 2) * Math.sin(Math.PI * 2 - config.angle)
-                  );
-
-                  thirdGroupPos.y = -length / 2;
-                  thirdGroupPos.z = boxThickness / 2;
-                  break;
-
-                case DIRECTIONS.OUTWARD:
-                  firstGroupPos.y = -length / 2;
-                  firstGroupPos.z = boxThickness / 2;
-
-                  bevelCutPos.y = -bevelCutDims.y / 2;
-                  bevelCutPos.z = -bevelCutDims.z / 2;
-
-                  firstGroupRot.x = Math.PI / 2 - config.angle;
-
-                  secondGroupPos.y = -(
-                    (-bevelCutDims.z / 2) * Math.sin(config.angle) +
-                    (bevelCutDims.y / 2) * Math.cos(config.angle)
-                  );
-                  secondGroupPos.z = -(
-                    (-bevelCutDims.z / 2) * Math.cos(config.angle) -
-                    (bevelCutDims.y / 2) * Math.sin(config.angle)
-                  );
-
-                  thirdGroupPos.y = -length / 2;
-                  thirdGroupPos.z = -boxThickness / 2;
-
-                  break;
+                const sinAngle = Math.sin(config.angle);
+                const cosAngle = Math.cos(config.angle);
+                secondGroupPos.y = -(
+                  (-bevelCutDims.z / 2) * sinAngle +
+                  (bevelCutDims.y / 2) * cosAngle
+                );
+                secondGroupPos.z = -(
+                  (-bevelCutDims.z / 2) * cosAngle -
+                  (bevelCutDims.y / 2) * sinAngle
+                );
               }
 
-              const bottomLeftMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "bottom-left"
-              );
-              const bottomRightMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "bottom-right"
-              );
+              // Handle mitre cuts
+              const bottomLeftMitreCuts = discs
+                .filter((d) => d.type === "mitreCut")
+                .filter((item) => item.location === "bottom-left");
+              const bottomRightMitreCuts = discs
+                .filter((d) => d.type === "mitreCut")
+                .filter((item) => item.location === "bottom-right");
+
               if (bottomLeftMitreCuts.length > 0) {
                 thirdGroupRot.z = bottomLeftMitreCuts[0].angle;
                 thirdGroupPos.x = -width / 2;
@@ -1426,11 +1370,15 @@
                 thirdGroupRot.z = -bottomRightMitreCuts[0].angle;
                 thirdGroupPos.x = width / 2;
               }
-
               break;
           }
 
-          // Declare discmesh
+          // Exit early if required parameters are missing or invalid
+          if (!config.direction || !config.edge || config.angle === 0) {
+            return; // No need to proceed without valid configuration
+          }
+
+          // Create the bevel cut mesh
           const discGeometry = new THREE.BoxGeometry(
             bevelCutDims.x,
             bevelCutDims.y,
@@ -1439,7 +1387,7 @@
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
           discMesh.position.set(bevelCutPos.x, bevelCutPos.y, bevelCutPos.z);
 
-          // Declare first group
+          // Create first group and add disc mesh
           const firstGroup = new THREE.Group();
           firstGroup.add(discMesh);
           firstGroup.position.set(
@@ -1453,7 +1401,7 @@
             firstGroupRot.z
           );
 
-          // Declare second group
+          // Create second group with transformed geometry
           const secondGroup = new THREE.Group();
           firstGroup.traverse((child) => {
             if (child.isMesh && child.geometry) {
@@ -1471,18 +1419,22 @@
               secondGroup.add(mesh);
             }
           });
-          const box = new THREE.Box3().setFromObject(secondGroup);
-          const center = box.getCenter(new THREE.Vector3());
 
-          if (config.edge === "top" || config.edge === "bottom")
-            if (config.angle > 0)
-              secondGroup.position.set(
-                secondGroupPos.x - center.x,
-                secondGroupPos.y - center.y,
-                secondGroupPos.z - center.z
-              );
+          // Position the second group correctly if needed
+          if (
+            (config.edge === "top" || config.edge === "bottom") &&
+            config.angle > 0
+          ) {
+            const box = new THREE.Box3().setFromObject(secondGroup);
+            const center = box.getCenter(new THREE.Vector3());
+            secondGroup.position.set(
+              secondGroupPos.x - center.x,
+              secondGroupPos.y - center.y,
+              secondGroupPos.z - center.z
+            );
+          }
 
-          // Declare third gorup
+          // Create third group with further transformations
           const thirdGroup = new THREE.Group();
           secondGroup.traverse((child) => {
             if (child.isMesh && child.geometry) {
@@ -1511,58 +1463,40 @@
             thirdGroupRot.z
           );
 
-          if (
-            config.direction !== "" &&
-            config.edge !== "" &&
-            config.angle !== 0
-          ) {
-            discs.push({
-              id: bevelCutId,
-              mesh: discMesh,
-              edge: config.edge,
-              direction: config.direction,
-              angle: config.angle,
-            });
+          // Add to discs array
+          discs = discs.filter((item) => item.id !== bevelCutId);
+          discs.push({
+            id: bevelCutId,
+            type: "bevelCut",
+            mesh: discMesh,
+            edge: config.edge,
+            direction: config.direction,
+            angle: config.angle,
+          });
 
-            // Update bevel cuts data
-            const updatedBevelCutsData = bevelCutsData.filter(
-              (item) => item.id !== bevelCutId
-            );
-            bevelCutsData = updatedBevelCutsData;
-            bevelCutsData.push({
-              id: bevelCutId,
-              edge: config.edge,
-              direction: config.direction,
-              angle: config.angle,
-            });
+          // Update brushes data
+          brushes = brushes.filter((item) => item.userData.id !== bevelCutId);
 
-            // Update brushes data
-            const updatedBrushes = brushes.filter(
-              (item) => item.userData.id !== bevelCutId
-            );
-            brushes = updatedBrushes;
+          // Add new brushes from the third group
+          thirdGroup.traverse((child) => {
+            if (child.isMesh && child.geometry) {
+              child.updateWorldMatrix(true, false);
+              const geometry = child.geometry.clone();
+              geometry.applyMatrix4(child.matrixWorld);
 
-            // Add Beve Cut
-            thirdGroup.traverse((child) => {
-              if (child.isMesh && child.geometry) {
-                child.updateWorldMatrix(true, false);
+              const mesh = new threeBvhCsg.Brush(
+                geometry,
+                child.material.clone()
+              );
+              mesh.userData.id = bevelCutId;
 
-                const geometry = child.geometry.clone();
-                geometry.applyMatrix4(child.matrixWorld);
+              brushes.push(mesh);
+              scene.add(mesh);
+            }
+          });
 
-                const mesh = new threeBvhCsg.Brush(
-                  geometry,
-                  child.material.clone()
-                );
-                mesh.userData.id = bevelCutId;
-
-                brushes.push(mesh);
-                scene.add(mesh);
-              }
-            });
-
-            updateCSG();
-          }
+          // Update CSG
+          updateCSG();
         }
 
         // Edit Bevel Cut
@@ -1572,11 +1506,8 @@
 
         // Remove Bevel Cut
         function deleteBevelCut(bevelCutId) {
-          const updatedBrushes = brushes.filter(
-            (item) => item.userData.id !== bevelCutId
-          );
-          brushes = updatedBrushes;
-
+          discs = discs.filter((item) => item.id !== bevelCutId);
+          brushes = brushes.filter((item) => item.userData.id !== bevelCutId);
           updateCSG();
         }
 
@@ -1660,30 +1591,22 @@
 
           discMesh.updateWorldMatrix();
 
+          discs = discs.filter((d) => d.id !== mitreCutId);
+          brushes = brushes.filter((b) => b.userData.id !== mitreCutId);
+
           if (config.angle !== 0 && config.direction !== "") {
             discs.push({
               id: mitreCutId,
+              type: "mitreCut",
               mesh: discMesh,
               location: config.location,
               angle: config.angle,
             });
 
-            const updatedMitreCuts = mitreCutsData.filter(
-              (item) => item.id !== mitreCutId
-            );
-            mitreCutsData = updatedMitreCuts;
-            mitreCutsData.push({
-              id: mitreCutId,
-              location: config.location,
-              angle: config.angle,
-            });
-
-            const updatedBrushes = brushes.filter(
-              (item) => item.userData.id !== mitreCutId
-            );
-            brushes = updatedBrushes;
+            brushes = brushes.filter((b) => b.userData.id !== mitreCutId);
 
             brushes.push(discMesh);
+
             updateCSG();
           }
         }
@@ -1697,10 +1620,12 @@
 
         // Remove Mitre Cut
         function deleteMitreCut(mitreCutId) {
-          const updatedBrushes = brushes.filter(
-            (item) => item.userData.id !== mitreCutId
-          );
-          brushes = updatedBrushes;
+          discs = discs.filter((d) => d.id !== mitreCutId);
+          brushes = brushes.filter((b) => b.userData.id !== mitreCutId);
+
+          updateCSGMeshes("moulding");
+          updateCSGMeshes("bevelCut");
+          updateCSGMeshes("mitreCut");
 
           updateCSG();
         }
