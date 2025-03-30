@@ -1000,179 +1000,116 @@
           const config = {
             ...defaults,
             ...options,
-            mouldingId: mouldingId,
-            face: face,
+            mouldingId,
+            face,
           };
 
-          console.log("config: ", config);
-
-          // Get current dimensions
           const { length, width, thickness } = dims;
+          const currentShapeDims = config.shapeId
+            ? getShapeDimsById(config.shapeId)
+            : { width: 0 };
 
-          // Get shape dims
-          let currentShapeDims;
-          if (config.shapeId) {
-            currentShapeDims = getShapeDimsById(config.shapeId);
-          } else {
-            currentShapeDims = { width: 0 };
-          }
-
-          // Get moulding length
           let mouldingLength = 0;
-
-          // Create a material
           let discMaterial;
-
-          // Calculate position based on face, millimeter coordinates, and dimensions
           const position = [0, 0, 0];
           const rotation = [0, 0, 0];
 
-          // Calculate actual position based on face and millimeter measurements
+          const getMitreCut = (location) =>
+            mitreCutsData.find((item) => item.location === location);
+
+          const baseZ =
+            -config.topDistance + (thickness / 2 - currentShapeDims.width / 2);
+
           switch (face) {
-            case FACES.FRONT: // +Z
-              // For front face: origin at top-left, X increases right, Y increases down
+            case FACES.FRONT:
               position[0] = -width / 2 + config.leftMM;
               position[1] = length / 2 - config.topMM;
               position[2] = thickness / 2 + config.zOffset;
               rotation[0] = Math.PI / 2;
-
-              mouldingLength = 0;
               discMaterial = materials[4];
               break;
 
-            case FACES.BACK: // -Z
-              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
+            case FACES.BACK:
               position[0] = width / 2 - config.leftMM;
               position[1] = length / 2 - config.topMM;
               position[2] = -thickness / 2 - config.zOffset;
               rotation[0] = -Math.PI / 2;
-
-              mouldingLength = 0;
               discMaterial = materials[5];
               break;
 
-            case FACES.RIGHT: // +X
-              // For right face: origin at top-front, X increases toward back, Y increases down
+            case FACES.RIGHT:
               position[0] = width / 2;
               position[1] = length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
+              position[2] = baseZ;
               rotation[0] = Math.PI / 2;
-
               mouldingLength = length;
               discMaterial = materials[0];
               break;
 
-            case FACES.LEFT: // -X
-              // For left face: origin at top-back, X increases toward front, Y increases down
+            case FACES.LEFT:
               position[0] = -width / 2;
               position[1] = -length / 2;
-              position[2] =
-                -config.topDistance +
-                (dims.thickness / 2 - currentShapeDims.width / 2);
+              position[2] = baseZ;
               rotation[0] = -Math.PI / 2;
               rotation[2] = Math.PI;
-
               mouldingLength = length;
               discMaterial = materials[1];
               break;
 
-            case FACES.TOP: // +Y
-              const topLeftMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "top-left"
-              );
-              const topRightMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "top-right"
-              );
+            case FACES.TOP:
+              {
+                const leftCut = getMitreCut("top-left");
+                const rightCut = getMitreCut("top-right");
 
-              mouldingLength = width;
-              discMaterial = materials[2];
-
-              if (topLeftMitreCuts.length > 0) {
-                mouldingLength =
-                  (width / Math.cos(topLeftMitreCuts[0].angle)) * 1.2;
-
-                position[0] = width / 2;
                 position[1] = length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-
+                position[2] = baseZ;
+                mouldingLength = width;
+                discMaterial = materials[2];
                 rotation[0] = Math.PI / 2;
-                rotation[1] = -Math.PI / 2 + topLeftMitreCuts[0].angle;
-                rotation[2] = Math.PI;
-              } else if (topRightMitreCuts.length > 0) {
-                mouldingLength =
-                  (width / Math.cos(topRightMitreCuts[0].angle)) * 1.2;
 
-                position[0] = -width / 2;
-                position[1] = length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-
-                rotation[0] = Math.PI / 2;
-                rotation[1] = Math.PI / 2 - topRightMitreCuts[0].angle;
-              } else {
-                position[0] = -width / 2;
-                position[1] = length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-
-                rotation[1] = Math.PI / 2;
-                rotation[2] = Math.PI / 2;
+                if (leftCut) {
+                  mouldingLength = (width / Math.cos(leftCut.angle)) * 1.2;
+                  position[0] = width / 2;
+                  rotation[1] = -Math.PI / 2 + leftCut.angle;
+                  rotation[2] = Math.PI;
+                } else if (rightCut) {
+                  mouldingLength = (width / Math.cos(rightCut.angle)) * 1.2;
+                  position[0] = -width / 2;
+                  rotation[1] = Math.PI / 2 - rightCut.angle;
+                } else {
+                  position[0] = -width / 2;
+                  rotation[1] = Math.PI / 2;
+                  rotation[2] = Math.PI / 2;
+                }
               }
               break;
 
-            case FACES.BOTTOM: // -Y
-              const bottomLeftMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "bottom-left"
-              );
-              const bottomRightMitreCuts = mitreCutsData.filter(
-                (item) => item.location === "bottom-right"
-              );
+            case FACES.BOTTOM:
+              {
+                const leftCut = getMitreCut("bottom-left");
+                const rightCut = getMitreCut("bottom-right");
 
-              if (bottomLeftMitreCuts.length > 0) {
-                mouldingLength =
-                  (width / Math.cos(bottomLeftMitreCuts[0].angle)) * 1.2;
-
-                position[0] = -width / 2;
                 position[1] = -length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-
-                rotation[0] = -Math.PI / 2;
-                rotation[1] = Math.PI / 2 - bottomLeftMitreCuts[0].angle;
-                rotation[2] = 0;
-              } else if (bottomRightMitreCuts.length > 0) {
-                mouldingLength =
-                  (width / Math.cos(bottomRightMitreCuts[0].angle)) * 1.2;
-
-                position[0] = width / 2;
-                position[1] = -length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-
-                rotation[0] = Math.PI / 2;
-                rotation[1] = -Math.PI / 2 - bottomRightMitreCuts[0].angle;
-                rotation[2] = 0;
-              } else {
+                position[2] = baseZ;
                 mouldingLength = width;
+                discMaterial = materials[3];
 
-                position[0] = -width / 2;
-                position[1] = -length / 2;
-                position[2] =
-                  -config.topDistance +
-                  (dims.thickness / 2 - currentShapeDims.width / 2);
-                rotation[1] = Math.PI / 2;
-                rotation[2] = -Math.PI / 2;
+                if (leftCut) {
+                  mouldingLength = (width / Math.cos(leftCut.angle)) * 1.2;
+                  position[0] = -width / 2;
+                  rotation[0] = -Math.PI / 2;
+                  rotation[1] = Math.PI / 2 - leftCut.angle;
+                } else if (rightCut) {
+                  mouldingLength = (width / Math.cos(rightCut.angle)) * 1.2;
+                  position[0] = width / 2;
+                  rotation[0] = Math.PI / 2;
+                  rotation[1] = -Math.PI / 2 - rightCut.angle;
+                } else {
+                  position[0] = -width / 2;
+                  rotation[1] = Math.PI / 2;
+                  rotation[2] = -Math.PI / 2;
+                }
               }
-
-              discMaterial = materials[3];
               break;
           }
 
@@ -1183,36 +1120,23 @@
             curveSegments: 200,
           };
 
-          // Generate shape
           const shape = generateShape(
             config.shapeId,
             config.shapeWidth,
             config.shapeHeight
           );
-
-          console.log("shape: ", shape);
-          console.log("oldShape", getShapeById(config.shapeId));
-
-          // Create a cylinder geometry with equal top and bottom radius
           const discGeometry = new THREE.ExtrudeGeometry(
-            // getShapeById(config.shapeId),
             shape,
             extrudeSettings
           );
-
-          // Create the mesh
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
           discMesh.userData.id = mouldingId;
 
-          // Set position
           discMesh.position.set(...position);
           discMesh.rotation.set(...rotation);
-
-          // discMesh.rotation.set(Math.PI / 2, Math.PI / 2 - Math.PI / 6, 0);
-          // discMesh.position.set(-width / 2, length / 2, 0);
           discMesh.updateWorldMatrix();
 
-          // Store the disc for later reference
+          // Update discs list
           discs.push({
             id: mouldingId,
             mesh: discMesh,
@@ -1223,10 +1147,8 @@
             shapeHeight: config.shapeHeight,
           });
 
-          const updatedMouldingsData = mouldingData.filter(
-            (item) => item.id !== mouldingId
-          );
-          mouldingData = updatedMouldingsData;
+          // Update moulding data
+          mouldingData = mouldingData.filter((item) => item.id !== mouldingId);
           mouldingData.push({
             id: mouldingId,
             face: config.face,
@@ -1234,106 +1156,26 @@
             shapeId: config.shapeId,
           });
 
-          const updatedBrushes = brushes.filter(
-            (item) => item.userData.id !== mouldingId
-          );
-          brushes = updatedBrushes;
-
-          // scene.add(discMesh);
+          // Update brushes
+          brushes = brushes.filter((item) => item.userData.id !== mouldingId);
 
           if (config.shapeWidth > 0 && config.shapeHeight > 0) {
             if (Math.abs(discMesh.position.z) < thickness / 2) {
               brushes.push(discMesh);
             }
-
             updateCSG();
           }
         }
 
         // Edit Moulding
-        function editMoulding(target, value, id) {
-          const disc = discs.filter((item) => item.id === id)[0];
-          const updateDiscs = discs.filter((item) => item.id !== id);
-
-          switch (target) {
-            case "face":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, value, {
-                topDistance: disc.topDistance,
-                shapeId: disc.shapeId,
-                shapeWidth: disc.shapeWidth,
-                shapeHeight: disc.shapeHeight,
-              });
-
-              break;
-            case "topDistance":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, disc.face, {
-                topDistance: parseFloat(value),
-                shapeId: disc.shapeId,
-                shapeWidth: disc.shapeWidth,
-                shapeHeight: disc.shapeHeight,
-              });
-              break;
-            case "shapeId":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, disc.face, {
-                topDistance: disc.topDistance,
-                shapeId: value,
-                shapeWidth: disc.shapeWidth,
-                shapeHeight: disc.shapeHeight,
-              });
-              break;
-
-            case "shapeWidth":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, disc.face, {
-                topDistance: disc.topDistance,
-                shapeId: disc.shapeId,
-                shapeWidth: parseFloat(value),
-                shapeHeight: disc.shapeHeight,
-              });
-              break;
-
-            case "shapeHeight":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, disc.face, {
-                topDistance: disc.topDistance,
-                shapeId: disc.shapeId,
-                shapeWidth: disc.shapeWidth,
-                shapeHeight: parseFloat(value),
-              });
-              break;
-
-            case "shapeDepth":
-              discs = updateDiscs;
-
-              addMoulding(disc.id, disc.face, {
-                topDistance: disc.topDistance,
-                shapeId: disc.shapeId,
-                shapeWidth: disc.shapeWidth,
-                shapeHeight: disc.shapeHeight,
-              });
-              break;
-
-            default:
-              break;
-          }
+        function editMoulding(mouldingId, face, options = {}) {
+          addMoulding(mouldingId, face, options); // Reuse existing logic to overwrite
         }
 
         // Delete Moulding
-        function deleteMoulding(id) {
-          const updatedItems = discs.filter((item) => item.id === id)[0];
-          const updateBrushes = brushes.filter(
-            (item) => item !== updatedItems.mesh
-          );
-          brushes = updateBrushes;
-
+        function deleteMoulding(mouldingId) {
+          discs = discs.filter((d) => d.id !== mouldingId);
+          brushes = brushes.filter((b) => b.userData.id !== mouldingId);
           updateCSG();
         }
 
@@ -1928,61 +1770,89 @@
           );
         });
 
-      document
-        .getElementById("add-moulding-btn")
-        .addEventListener("click", function () {
-          const container = document.getElementById("mouldings-container");
+      const mouldingsContainer = document.getElementById("mouldings-container");
 
-          // Generate moulding Id
-          const mouldingId =
-            Date.now().toString() + Math.random().toString(36).substr(2, 9);
+      function addMoulding() {
+        // Generate moulding Id
+        const mouldingId =
+          Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
-          // Create a new moulding item
-          const newItem = document.createElement("div");
-          newItem.classList.add("moulding-item");
-          newItem.dataset.mouldingId = mouldingId; // Unique ID
+        // Create a new moulding item
+        const newItem = document.createElement("div");
+        newItem.classList.add("moulding-item");
+        newItem.dataset.mouldingId = mouldingId; // Unique ID
 
-          newItem.innerHTML = `
+        newItem.innerHTML = `
           <div class="input-group mb-2">
-              <select class="form-select moulding-face" onchange="BoxModel.editMoulding('face', this.value, this.closest('.moulding-item').dataset.mouldingId)">
+              <select class="form-select moulding-face">
                   <option value="left">Left</option>
                   <option value="right">Right</option>
                   <option value="top">Top</option>
                   <option value="bottom">Bottom</option>
               </select>
-              <input type="number" placeholder="Distance from Top" class="form-control moulding-distance"  onchange="BoxModel.editMoulding('topDistance', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
-              <select class="form-select moulding-shape" onchange="BoxModel.editMoulding('shapeId', this.value, this.closest('.moulding-item').dataset.mouldingId)">
+              <input type="number" placeholder="Distance from Top" class="form-control moulding-distance"  />
+              <select class="form-select moulding-shape" >
                   <option value="">None</option>
                   <option value="shape16">Shape 16</option>
                   <option value="shape17">Shape 17</option>
               </select>
-              <input type="number" placeholder="Shape Width" class="form-control shape-width"  onchange="BoxModel.editMoulding('shapeWidth', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
-              <input type="number" placeholder="Shape Height" class="form-control shape-height"  onchange="BoxModel.editMoulding('shapeHeight', this.value, this.closest('.moulding-item').dataset.mouldingId)"/>
+              <input type="number" placeholder="Shape Width" class="form-control shape-width" />
+              <input type="number" placeholder="Shape Height" class="form-control shape-height"  />
               <button onclick="BoxModel.deleteMoulding(this.closest('.moulding-item').dataset.mouldingId)" type="button" class="btn btn-danger remove-moulding" id="delete-moulding-btn">
                   Delete
               </button>
           </div>
-      `;
+        `;
+        // Append new item to container
+        mouldingsContainer.appendChild(newItem);
 
-          // Append new item to container
-          container.appendChild(newItem);
+        BoxModel.addMoulding(mouldingId, BoxModel.FACES.LEFT, {});
+      }
 
-          // Add moulding data
-          BoxModel.addMoulding(mouldingId, BoxModel.FACES.LEFT, {});
-        });
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("add-moulding-btn").onclick = () =>
+          addMoulding();
 
-      // Event delegation for removing items
-      document
-        .getElementById("mouldings-container")
-        .addEventListener("click", function (e) {
-          // If the clicked element is the delete button, remove the corresponding moulding item
-          if (e.target && e.target.id === "delete-moulding-btn") {
-            const mouldingItem = e.target.closest(".moulding-item");
-            if (mouldingItem) {
-              mouldingItem.remove();
-            }
+        mouldingsContainer.addEventListener("click", (e) => {
+          if (e.target.closest(".remove-cutout")) {
+            const item = e.target.closest(".cutout-item");
+            const cutHoleId = item.dataset.cutHoleId;
+
+            BoxModel.deleteThickCircle(cutHoleId);
+
+            item.remove();
           }
         });
+
+        mouldingsContainer.addEventListener("change", (e) => {
+          if (
+            [
+              "moulding-face",
+              "moulding-distance",
+              "moulding-shape",
+              "shape-width",
+              "shape-height",
+            ].some((cls) => e.target.classList.contains(cls))
+          ) {
+            const item = e.target.closest(".moulding-item");
+
+            const mouldingId = item.dataset.mouldingId;
+            const mouldingFace = item.querySelector(".moulding-face")?.value;
+            const mouldingDistance =
+              item.querySelector(".moulding-distance")?.value;
+            const mouldingShape = item.querySelector(".moulding-shape")?.value;
+            const shapeWidth = item.querySelector(".shape-width")?.value;
+            const shapeHeight = item.querySelector(".shape-height")?.value;
+
+            BoxModel.editMoulding(mouldingId, mouldingFace, {
+              topDistance: parseFloat(mouldingDistance),
+              shapeId: mouldingShape,
+              shapeWidth: parseFloat(shapeWidth),
+              shapeHeight: parseFloat(shapeHeight),
+            });
+          }
+        });
+      });
 
       const cutHolesContainer = document.getElementById("cutouts-container");
 
