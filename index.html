@@ -396,289 +396,102 @@
           });
         }
 
-        // Then replace the addThickCircle function with this implementation:
-        function addThickCircle(radius, thickness, options = {}) {
-          // Default options for positioning
+        // Add Cut Hole
+        function addThickCircle(cutHoleId, options = {}) {
           const defaults = {
-            face: FACES.FRONT, // Default face to place the circle on
-            topMM: 0, // Distance from top edge in millimeters
-            leftMM: 0, // Distance from left edge in millimeters
-            zOffset: 0, // Offset from the face surface
-            color: Math.random() * 0xffffff,
-            opacity: 0.7,
+            face: FACES.FRONT,
+            topMM: 0,
+            leftMM: 0,
+            radius: 20,
+            zOffset: 0, // ensure default exists
           };
 
-          // Merge provided options with defaults
           const config = { ...defaults, ...options };
+          const { face, topMM, leftMM, radius, zOffset } = config;
+          const { length, width, thickness } = dims;
 
-          // Create a cylinder geometry with equal top and bottom radius
-          const discGeometry = new THREE.CylinderGeometry(
-            radius, // radiusTop
-            radius, // radiusBottom
-            dims.thickness + 0.1, // height (thickness)
-            32, // radialSegments
-            1, // heightSegments
-            false // openEnded
+          // Create geometry and material
+          const geometry = new THREE.CylinderGeometry(
+            radius,
+            radius,
+            thickness + 0.1,
+            32
           );
+          const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+          const mesh = new threeBvhCsg.Brush(geometry, material);
 
-          // Create a material
-          const discMaterial = new THREE.MeshStandardMaterial({
-            color: 0xff0000,
-          });
-
-          // Create the mesh
-          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
-
-          // Calculate position based on face, millimeter coordinates, and dimensions
-          const position = [0, 0, 0];
-
-          // Get current dimensions
-          const { length, width, thickness: boxThickness } = dims;
-
-          // Calculate actual position based on face and millimeter measurements
-          switch (config.face) {
-            case FACES.FRONT: // +Z
-              // For front face: origin at top-left, X increases right, Y increases down
-              position[0] = -width / 2 + config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = 0;
-              discMesh.rotation.x = Math.PI / 2;
+          // Position and rotation
+          const pos = [0, 0, 0];
+          switch (face) {
+            case FACES.FRONT:
+              pos[0] = -width / 2 + leftMM;
+              pos[1] = length / 2 - topMM;
+              pos[2] = 0;
+              mesh.rotation.x = Math.PI / 2;
               break;
 
-            case FACES.BACK: // -Z
-              // For back face: origin at top-right (when viewed from behind), X increases left, Y increases down
-              position[0] = width / 2 - config.leftMM;
-              position[1] = length / 2 - config.topMM;
-              position[2] = -boxThickness / 2 - config.zOffset;
-              discMesh.rotation.x = -Math.PI / 2;
+            case FACES.BACK:
+              pos[0] = width / 2 - leftMM;
+              pos[1] = length / 2 - topMM;
+              pos[2] = -thickness / 2 - zOffset;
+              mesh.rotation.x = -Math.PI / 2;
               break;
 
-            case FACES.RIGHT: // +X
-              // For right face: origin at top-front, X increases toward back, Y increases down
-              position[0] = width / 2 + config.zOffset;
-              position[1] = length / 2 - config.topMM;
-              position[2] = boxThickness / 2 - config.leftMM;
-              discMesh.rotation.z = Math.PI / 2;
+            case FACES.RIGHT:
+              pos[0] = width / 2 + zOffset;
+              pos[1] = length / 2 - topMM;
+              pos[2] = thickness / 2 - leftMM;
+              mesh.rotation.z = Math.PI / 2;
               break;
 
-            case FACES.LEFT: // -X
-              // For left face: origin at top-back, X increases toward front, Y increases down
-              position[0] = -width / 2 - config.zOffset;
-              position[1] = length / 2 - config.topMM;
-              position[2] = -boxThickness / 2 + config.leftMM;
-              discMesh.rotation.z = -Math.PI / 2;
+            case FACES.LEFT:
+              pos[0] = -width / 2 - zOffset;
+              pos[1] = length / 2 - topMM;
+              pos[2] = -thickness / 2 + leftMM;
+              mesh.rotation.z = -Math.PI / 2;
               break;
 
-            case FACES.TOP: // +Y
-              // For top face: origin at back-left, X increases right, Y increases forward
-              position[0] = -width / 2 + config.leftMM;
-              position[1] = length / 2 + config.zOffset;
-              position[2] = -boxThickness / 2 + config.topMM;
-              // Default rotation works for top face
+            case FACES.TOP:
+              pos[0] = -width / 2 + leftMM;
+              pos[1] = length / 2 + zOffset;
+              pos[2] = -thickness / 2 + topMM;
               break;
 
-            case FACES.BOTTOM: // -Y
-              // For bottom face: origin at front-left, X increases right, Y increases backward
-              position[0] = -width / 2 + config.leftMM;
-              position[1] = -length / 2 - config.zOffset;
-              position[2] = boxThickness / 2 - config.topMM;
-              discMesh.rotation.x = Math.PI;
+            case FACES.BOTTOM:
+              pos[0] = -width / 2 + leftMM;
+              pos[1] = -length / 2 - zOffset;
+              pos[2] = thickness / 2 - topMM;
+              mesh.rotation.x = Math.PI;
               break;
           }
 
-          // Set position
-          discMesh.position.set(...position);
-          discMesh.updateWorldMatrix();
+          mesh.position.set(...pos);
+          mesh.updateWorldMatrix();
+          mesh.userData.id = cutHoleId;
 
-          // Add to scene
-          // scene.add(discMesh);
-          brushes.push(discMesh);
+          // Replace existing brush with same ID
+          brushes = brushes.filter((b) => b.userData.id !== cutHoleId);
+          brushes.push(mesh);
 
           updateCSG();
 
-          // Store the disc for later reference
-          const discId =
-            Date.now().toString() + Math.random().toString(36).substr(2, 9);
-          discs.push({
-            id: discId,
-            mesh: discMesh,
-            face: config.face,
-            topMM: config.topMM,
-            leftMM: config.leftMM,
-          });
+          // Replace existing disc metadata
+          discs = discs.filter((d) => d.id !== cutHoleId);
+          discs.push({ id: cutHoleId, mesh, face, topMM, leftMM });
 
-          // Render the scene
           renderer.render(scene, camera);
-
-          // Return the disc's ID so it can be removed later
-          return discId;
         }
 
-        function editThickCircle(discId, options = {}) {
-          // Find the disc by ID
-          const discIndex = discs.findIndex((disc) => disc.id === discId);
-
-          if (discIndex === -1) {
-            console.error(`Disc with ID ${discId} not found.`);
-            return false;
-          }
-
-          const disc = discs[discIndex];
-          const discMesh = disc.mesh;
-
-          // Update properties based on provided options
-          if (options.radius !== undefined) {
-            // Update the geometry with a new radius
-            const oldGeometry = discMesh.geometry;
-            const newGeometry = new THREE.CylinderGeometry(
-              options.radius, // radiusTop
-              options.radius, // radiusBottom
-              oldGeometry.parameters.height, // keep the same thickness
-              32, // radialSegments
-              1, // heightSegments
-              false // openEnded
-            );
-
-            discMesh.geometry.dispose();
-            discMesh.geometry = newGeometry;
-          }
-
-          if (options.thickness !== undefined) {
-            // Update the geometry with a new thickness
-            const oldGeometry = discMesh.geometry;
-            const newGeometry = new THREE.CylinderGeometry(
-              oldGeometry.parameters.radiusTop, // keep the same radius
-              oldGeometry.parameters.radiusBottom,
-              options.thickness, // new thickness
-              32, // radialSegments
-              1, // heightSegments
-              false // openEnded
-            );
-
-            discMesh.geometry.dispose();
-            discMesh.geometry = newGeometry;
-          }
-
-          // Update material properties
-          if (options.color !== undefined) {
-            discMesh.material.color.set(options.color);
-          }
-
-          if (options.opacity !== undefined) {
-            discMesh.material.opacity = options.opacity;
-            // Ensure transparency is enabled if opacity < 1
-            discMesh.material.transparent = options.opacity < 1;
-          }
-
-          // Update position if topMM or leftMM changed
-          const positionChanged =
-            options.topMM !== undefined || options.leftMM !== undefined;
-          if (positionChanged) {
-            // Get current dimensions
-            const { length, width, thickness: boxThickness } = dims;
-
-            // Get the face from the disc object or use the provided face
-            const face = options.face || disc.face;
-
-            // Update the disc's stored values
-            if (options.topMM !== undefined) {
-              disc.topMM = options.topMM;
-            }
-
-            if (options.leftMM !== undefined) {
-              disc.leftMM = options.leftMM;
-            }
-
-            if (options.face !== undefined) {
-              disc.face = options.face;
-
-              // Reset rotation based on the new face
-              discMesh.rotation.set(0, 0, 0);
-
-              switch (options.face) {
-                case FACES.FRONT:
-                  discMesh.rotation.x = Math.PI / 2;
-                  break;
-                case FACES.BACK:
-                  discMesh.rotation.x = -Math.PI / 2;
-                  break;
-                case FACES.RIGHT:
-                  discMesh.rotation.z = Math.PI / 2;
-                  break;
-                case FACES.LEFT:
-                  discMesh.rotation.z = -Math.PI / 2;
-                  break;
-                case FACES.TOP:
-                  // Default rotation works for top face
-                  break;
-                case FACES.BOTTOM:
-                  discMesh.rotation.x = Math.PI;
-                  break;
-              }
-            }
-
-            // Calculate new position
-            const position = [0, 0, 0];
-            const zOffset =
-              options.zOffset !== undefined
-                ? options.zOffset
-                : discMesh.position.y - length / 2 > 0
-                ? discMesh.position.y - length / 2
-                : 0;
-
-            switch (disc.face) {
-              case FACES.FRONT:
-                position[0] = -width / 2 + disc.leftMM;
-                position[1] = length / 2 - disc.topMM;
-                position[2] = boxThickness / 2 + zOffset;
-                break;
-              case FACES.BACK:
-                position[0] = width / 2 - disc.leftMM;
-                position[1] = length / 2 - disc.topMM;
-                position[2] = -boxThickness / 2 - zOffset;
-                break;
-              case FACES.RIGHT:
-                position[0] = width / 2 + zOffset;
-                position[1] = length / 2 - disc.topMM;
-                position[2] = boxThickness / 2 - disc.leftMM;
-                break;
-              case FACES.LEFT:
-                position[0] = -width / 2 - zOffset;
-                position[1] = length / 2 - disc.topMM;
-                position[2] = -boxThickness / 2 + disc.leftMM;
-                break;
-              case FACES.TOP:
-                position[0] = -width / 2 + disc.leftMM;
-                position[1] = length / 2 + zOffset;
-                position[2] = -boxThickness / 2 + disc.topMM;
-                break;
-              case FACES.BOTTOM:
-                position[0] = -width / 2 + disc.leftMM;
-                position[1] = -length / 2 - zOffset;
-                position[2] = boxThickness / 2 - disc.topMM;
-                break;
-            }
-
-            // Update position
-            discMesh.position.set(...position);
-          }
-
-          // Render the scene
-          renderer.render(scene, camera);
-
-          return true;
+        // Edit Cut Hole
+        function editThickCircle(cutHoleId, options = {}) {
+          addThickCircle(cutHoleId, options); // Reuse the existing logic to "edit" by overwriting
         }
 
-        function deleteThickCircle(discId) {
-          const updatedItems = discs.filter((item) => item.id === discId)[0];
-          const updateBrushes = brushes.filter(
-            (item) => item !== updatedItems.mesh
-          );
-          brushes = updateBrushes;
-
+        // Delete Cut Hole
+        function deleteThickCircle(cutHoleId) {
+          discs = discs.filter((d) => d.id !== cutHoleId);
+          brushes = brushes.filter((b) => b.userData.id !== cutHoleId);
           updateCSG();
-
-          return true;
         }
 
         // Create box with materials
@@ -2171,99 +1984,74 @@
           }
         });
 
-      const cutoutsContainer = document.getElementById("cutouts-container"),
-        holesInput = document.getElementById("cutout-holes-data"),
-        cutoutCircles = {},
-        DEFAULT_CUTOUT = { top: 100, left: 100, diameter: 30 };
+      const cutHolesContainer = document.getElementById("cutouts-container");
 
-      function getThickness() {
-        return parseInt(document.getElementById("thickness")?.value) || 60;
-      }
+      function addCutHole() {
+        // Generate moulding Id
+        const cutHoleId =
+          Date.now().toString() + Math.random().toString(36).substr(2, 9);
 
-      function getData(item) {
-        return {
-          top: +item.querySelector(".cutout-top").value || 0,
-          left: +item.querySelector(".cutout-left").value || 0,
-          diameter: +item.querySelector(".cutout-diameter").value || 30,
+        // Create a new moulding item
+        const newItem = document.createElement("div");
+        newItem.classList.add("cutout-item");
+        newItem.dataset.cutHoleId = cutHoleId; // Unique ID
+
+        newItem.innerHTML = `
+          <div class="input-group mb-2">
+            <input type="number" placeholder="Top" value="100" class="cutout-top form-control">
+            <input type="number" placeholder="Left" value="100" class="cutout-left form-control">
+            <select class="form-select cutout-diameter">
+              <option value="40">40mm</option>
+              <option value="60">60mm</option>
+            </select>
+            <button type="button" class="btn btn-danger remove-cutout">Delete</button>
+          </div>
+        `;
+        // Append new item to container
+        cutHolesContainer.appendChild(newItem);
+
+        const defaultValues = {
+          topMM: 100,
+          leftMM: 100,
+          radius: 20,
         };
-      }
 
-      function updateHoles() {
-        holesInput.value = JSON.stringify(
-          [...container.querySelectorAll(".cutout-item")].map(getData)
-        );
-      }
-
-      function renderCircle(id, data) {
-        const radius = data.diameter / 2,
-          thickness = getThickness();
-        cutoutCircles[id] = BoxModel.addThickCircle(radius, thickness, {
-          face: BoxModel.FACES.FRONT,
-          zOffset: -(thickness / 2),
-          topMM: data.top,
-          leftMM: data.left,
-          color: 0xff0000,
-          opacity: 0.7,
-        });
-      }
-
-      function removeCircle(id) {
-        BoxModel.deleteThickCircle(cutoutCircles[id]);
-        delete cutoutCircles[id];
-      }
-
-      function addCutout(data = DEFAULT_CUTOUT) {
-        const id = Date.now().toString();
-        cutoutsContainer.insertAdjacentHTML(
-          "beforeend",
-          `
-                <div class="cutout-item" data-cutout-id="${id}">
-                    <div class="input-group mb-2">
-                        <input type="number" placeholder="Top" value="${data.top}" class="cutout-top form-control">
-                        <input type="number" placeholder="Left" value="${data.left}" class="cutout-left form-control">
-                        <select class="form-select cutout-diameter">
-                            <option value="60">60mm</option>
-                            <option value="40">40mm</option>
-                        </select>
-                        <button type="button" class="btn btn-danger remove-cutout">Delete</button>
-                    </div>
-                </div>
-            `
-        );
-        renderCircle(id, data);
-        updateHoles();
+        BoxModel.addThickCircle(cutHoleId, defaultValues);
       }
 
       document.addEventListener("DOMContentLoaded", () => {
-        try {
-          JSON.parse(holesInput.value || "[]").forEach((cutout, idx) =>
-            renderCircle(idx.toString(), cutout)
-          );
-        } catch (e) {
-          console.error(e);
-        }
+        document.getElementById("add-cutout-btn").onclick = () => addCutHole();
 
-        document.getElementById("add-cutout-btn").onclick = () => addCutout();
-
-        cutoutsContainer.addEventListener("click", (e) => {
+        cutHolesContainer.addEventListener("click", (e) => {
           if (e.target.closest(".remove-cutout")) {
             const item = e.target.closest(".cutout-item");
-            removeCircle(item.dataset.cutoutId);
+            const cutHoleId = item.dataset.cutHoleId;
+
+            BoxModel.deleteThickCircle(cutHoleId);
+
             item.remove();
-            updateHoles();
           }
         });
 
-        cutoutsContainer.addEventListener("change", (e) => {
+        cutHolesContainer.addEventListener("change", (e) => {
           if (
             ["cutout-top", "cutout-left", "cutout-diameter"].some((cls) =>
               e.target.classList.contains(cls)
             )
           ) {
             const item = e.target.closest(".cutout-item");
-            removeCircle(item.dataset.cutoutId);
-            renderCircle(item.dataset.cutoutId, getData(item));
-            updateHoles();
+
+            const cutHoleId = item.dataset.cutHoleId;
+            const cutHoleTop = item.querySelector(".cutout-top")?.value;
+            const cutHoleLeft = item.querySelector(".cutout-left")?.value;
+            const cutHoleDiameter =
+              item.querySelector(".cutout-diameter")?.value;
+
+            BoxModel.editThickCircle(cutHoleId, {
+              topMM: parseFloat(cutHoleTop),
+              leftMM: parseFloat(cutHoleLeft),
+              radius: parseFloat(cutHoleDiameter) / 2,
+            });
           }
         });
       });
