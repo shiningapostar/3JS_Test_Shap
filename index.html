@@ -192,7 +192,16 @@
         const materials = Array.from(
           { length: 6 },
           () =>
-            new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff })
+            new THREE.MeshStandardMaterial({
+              color: Math.random() * 0xffffff,
+              transparent: true,
+              depthWrite: true,
+              polygonOffset: true,
+              polygonOffsetFactor: 0.2,
+              polygonOffsetUnits: 0.2,
+              side: THREE.DoubleSide,
+              premultipliedAlpha: true,
+            })
         );
 
         let discs = [];
@@ -800,7 +809,7 @@
         }
 
         // Generate shape from points
-        function generateShape(shapeId, shapeWidth, shapeHeight) {
+        function generateShapePoints(shapeId, shapeWidth, shapeHeight) {
           let shape = [[]];
           const basicLength = 40;
 
@@ -954,6 +963,9 @@
             face,
           };
 
+          const randomNum = Math.random() * (0.00009 - 0.00001) + 0.00001;
+          config.shapeWidth += randomNum;
+
           const { length, width, thickness } = dims;
 
           let mouldingLength = 0;
@@ -1088,7 +1100,7 @@
             curveSegments: 200,
           };
 
-          const shape = generateShape(
+          const shape = generateShapePoints(
             config.shapeId,
             config.shapeWidth,
             config.shapeHeight
@@ -1695,11 +1707,11 @@
           addMoulding();
 
         mouldingsContainer.addEventListener("click", (e) => {
-          if (e.target.closest(".remove-cutout")) {
-            const item = e.target.closest(".cutout-item");
-            const cutHoleId = item.dataset.cutHoleId;
+          if (e.target.closest(".remove-moulding")) {
+            const item = e.target.closest(".moulding-item");
+            const mouldingId = item.dataset.mouldingId;
 
-            BoxModel.deleteThickCircle(cutHoleId);
+            BoxModel.deleteMoulding(mouldingId);
 
             item.remove();
           }
