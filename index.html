@@ -582,6 +582,7 @@
               updateCSGMeshes("moulding");
               updateCSGMeshes("bevelCut");
               updateCSGMeshes("mitreCut");
+              updateCSGMeshes("corner");
 
               if (callback && typeof callback === "function") {
                 callback(materials[faceIndex]);
@@ -1615,6 +1616,7 @@
           addMitreCut(mitreCutId, { ...options });
           updateCSGMeshes("moulding");
           updateCSGMeshes("bevelCut");
+          updateCSGMeshes("corner");
         }
 
         // Remove Mitre Cut
@@ -1625,6 +1627,7 @@
           updateCSGMeshes("moulding");
           updateCSGMeshes("bevelCut");
           updateCSGMeshes("mitreCut");
+          updateCSGMeshes("corner");
 
           updateCSG();
         }
