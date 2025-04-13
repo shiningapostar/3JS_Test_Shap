@@ -20,6 +20,7 @@
       }
       #container #layout-container {
         padding: 40px;
+        overflow-y: auto;
       }
       .section-box {
         margin-bottom: 20px;
@@ -165,6 +166,19 @@
             </button>
           </div>
         </div>
+        <div class="section-box">
+          <h2>Corners</h2>
+          <div id="corners-container"></div>
+          <div class="mt-2 text-end">
+            <button
+              type="button"
+              class="btn btn-sm btn-primary"
+              id="add-corner-btn"
+            >
+              Add Corner
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -229,6 +243,14 @@
           TOPRIGHTCORNER: "top-right",
           BOTTOMLEFTCORNER: "bottom-left",
           BOTTOMRIGHTCORNER: "bottom-right",
+          FRONTLEFTCORNER: "front-left",
+          FRONTRIGHTCORNER: "front-right",
+          BACKLEFTCORNER: "back-left",
+          BACKRIGHTCORNER: "back-right",
+          TOPFRONTCORNER: "top-front",
+          TOPBACKCORNER: "top-back",
+          BOTTOMFRONTCORNER: "bottom-front",
+          BOTTOMBACKCORNER: "bottom-back",
         };
 
         // Mapping between face keys and BoxGeometry indices
@@ -439,6 +461,7 @@
           updateCSGMeshes("moulding");
           updateCSGMeshes("bevelCut");
           updateCSGMeshes("mitreCut");
+          updateCSGMeshes("corner");
 
           updateCameraPosition(true);
           return cube;
@@ -477,6 +500,18 @@
                 editMitreCut(item.id, {
                   location: item.location,
                   angle: item.angle,
+                })
+              );
+          } else if (target === "corner") {
+            // Updates Corners
+            discs
+              .filter((d) => d.type === "corner")
+              .forEach((item) =>
+                editCorner(item.id, {
+                  location: item.face,
+                  firstDimension: item.firstDimension,
+                  secondDimension: item.secondDimension,
+                  radius: item.radius,
                 })
               );
           }
@@ -741,26 +776,28 @@
         }
 
         function updateCSG() {
+          const clearSceneMeshes = () => {
+            for (let i = scene.children.length - 1; i >= 0; i--) {
+              const obj = scene.children[i];
+              if (obj.isMesh) {
+                obj.geometry.dispose();
+                scene.remove(obj);
+              }
+            }
+          };
+
           if (brushes.length > 0) {
             let finalBrush = brushes[0];
 
-            for (let i = scene.children.length - 1; i >= 0; i--) {
-              let obj = scene.children[i];
-              if (obj.isMesh) {
-                obj.geometry.dispose(); // Dispose geometry
-                scene.remove(obj); // Remove from scene
-              }
-            }
+            clearSceneMeshes();
             scene.add(resultObject);
 
-            for (let i = 1, l = brushes.length; i < l; i++) {
-              const b = brushes[i];
-              const isOverlapping = checkBrushOverlap(b, cube);
-
-              if (isOverlapping) {
+            for (let i = 1; i < brushes.length; i++) {
+              const brush = brushes[i];
+              if (checkBrushOverlap(brush, cube)) {
                 finalBrush = csgEvaluator.evaluate(
                   finalBrush,
-                  b,
+                  brush,
                   threeBvhCsg.ADDITION
                 );
               }
@@ -773,16 +810,10 @@
               resultObject
             );
           } else {
-            for (let i = scene.children.length - 1; i >= 0; i--) {
-              let obj = scene.children[i];
-              if (obj.isMesh) {
-                obj.geometry.dispose(); // Dispose geometry
-                scene.remove(obj); // Remove from scene
-              }
-            }
-
+            clearSceneMeshes();
             scene.add(cube);
           }
+
           renderer.render(scene, camera);
         }
 
@@ -1598,6 +1629,215 @@
           updateCSG();
         }
 
+        // Add Corner
+        function addCorner(cornerId, options = {}) {
+          const defaults = {
+            cornerId: "",
+            location: "",
+            radius: 0,
+            firstDimension: 0,
+            secondDimension: 0,
+            delta: 20,
+          };
+
+          const config = {
+            ...defaults,
+            ...options,
+            cornerId: cornerId,
+          };
+
+          const { length, width, thickness: boxThickness } = dims;
+
+          let cornerDepth = 0;
+
+          let cornerPos = { x: 0, y: 0, z: 0 };
+          let cornerRot = { x: 0, y: 0, z: 0 };
+
+          switch (config.location) {
+            case LOCATIONS.TOPLEFTCORNER:
+              cornerDepth = boxThickness + 10;
+
+              cornerRot.z = Math.PI / 2;
+              cornerPos.x = -width / 2 - config.delta;
+              cornerPos.y = length / 2 + config.delta;
+              cornerPos.z = -cornerDepth / 2;
+              break;
+
+            case LOCATIONS.TOPRIGHTCORNER:
+              cornerDepth = boxThickness + 10;
+
+              cornerPos.x = width / 2 + config.delta;
+              cornerPos.y = length / 2 + config.delta;
+              cornerPos.z = -cornerDepth / 2;
+              break;
+
+            case LOCATIONS.BOTTOMLEFTCORNER:
+              cornerDepth = boxThickness + 10;
+
+              cornerRot.z = Math.PI;
+              cornerPos.x = -width / 2 - config.delta;
+              cornerPos.y = -length / 2 - config.delta;
+              cornerPos.z = -cornerDepth / 2;
+              break;
+
+            case LOCATIONS.BOTTOMRIGHTCORNER:
+              cornerDepth = boxThickness + 10;
+
+              cornerRot.z = -Math.PI / 2;
+              cornerPos.x = width / 2 + config.delta;
+              cornerPos.y = -length / 2 - config.delta;
+              cornerPos.z = -cornerDepth / 2;
+              break;
+
+            case LOCATIONS.FRONTLEFTCORNER:
+              cornerDepth = length + config.delta;
+
+              cornerPos.x = -width / 2 - config.delta;
+              cornerPos.y = cornerDepth / 2;
+              cornerPos.z = boxThickness / 2 + config.delta;
+              cornerRot.x = Math.PI / 2;
+              cornerRot.z = Math.PI / 2;
+              break;
+
+            case LOCATIONS.FRONTRIGHTCORNER:
+              cornerDepth = length + config.delta;
+
+              cornerPos.x = width / 2 + config.delta;
+              cornerPos.y = cornerDepth / 2;
+              cornerPos.z = boxThickness / 2 + config.delta;
+              cornerRot.x = Math.PI / 2;
+              break;
+
+            case LOCATIONS.BACKLEFTCORNER:
+              cornerDepth = length + config.delta;
+
+              cornerPos.x = -width / 2 - config.delta;
+              cornerPos.y = cornerDepth / 2;
+              cornerPos.z = -boxThickness / 2 - config.delta;
+              cornerRot.x = Math.PI / 2;
+              cornerRot.z = Math.PI;
+              break;
+
+            case LOCATIONS.BACKRIGHTCORNER:
+              cornerDepth = length + config.delta;
+
+              cornerPos.x = width / 2 + config.delta;
+              cornerPos.y = cornerDepth / 2;
+              cornerPos.z = -boxThickness / 2 - config.delta;
+              cornerRot.x = Math.PI / 2;
+              cornerRot.z = -Math.PI / 2;
+              break;
+
+            case LOCATIONS.TOPFRONTCORNER:
+              cornerDepth = width + config.delta;
+
+              cornerPos.x = -cornerDepth / 2;
+              cornerPos.y = length / 2 + config.delta;
+              cornerPos.z = boxThickness / 2 + config.delta;
+              cornerRot.x = Math.PI / 2;
+              cornerRot.y = Math.PI / 2;
+              break;
+
+            case LOCATIONS.TOPBACKCORNER:
+              cornerDepth = width + config.delta;
+
+              cornerPos.x = -cornerDepth / 2;
+              cornerPos.y = length / 2 + config.delta;
+              cornerPos.z = -boxThickness / 2 - config.delta;
+
+              cornerRot.y = Math.PI / 2;
+              break;
+
+            case LOCATIONS.BOTTOMFRONTCORNER:
+              cornerDepth = width + config.delta;
+
+              cornerPos.x = -cornerDepth / 2;
+              cornerPos.y = -length / 2 - config.delta;
+              cornerPos.z = boxThickness / 2 + config.delta;
+
+              cornerRot.y = Math.PI / 2;
+              cornerRot.z = -Math.PI;
+              break;
+
+            case LOCATIONS.BOTTOMBACKCORNER:
+              cornerDepth = width + config.delta;
+
+              cornerPos.x = -cornerDepth / 2;
+              cornerPos.y = -length / 2 - config.delta;
+              cornerPos.z = -boxThickness / 2 - config.delta;
+
+              cornerRot.y = Math.PI / 2;
+              cornerRot.z = -Math.PI / 2;
+              break;
+          }
+
+          const extrudeSettings = {
+            steps: 5,
+            depth: cornerDepth,
+            bevelEnabled: false,
+            curveSegments: 200,
+          };
+
+          const shape = new THREE.Shape();
+          shape.moveTo(0, 0);
+          shape.lineTo(0, -config.delta - config.secondDimension);
+          shape.lineTo(-config.delta, -config.delta - config.secondDimension);
+          shape.quadraticCurveTo(
+            -config.delta - (config.firstDimension * config.radius) / 100,
+            -config.delta - (config.secondDimension * config.radius) / 100,
+            -config.delta - config.firstDimension,
+            -config.delta
+          );
+          // shape.lineTo(-config.delta - config.firstDimension, -config.delta);
+          shape.lineTo(-config.delta - config.firstDimension, 0);
+          shape.lineTo(0, 0);
+
+          const discGeometry = new THREE.ExtrudeGeometry(
+            shape,
+            extrudeSettings
+          );
+
+          const discMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff00ff,
+          });
+
+          const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
+          discMesh.userData.id = config.cornerId;
+          discMesh.position.set(cornerPos.x, cornerPos.y, cornerPos.z);
+          discMesh.rotation.set(cornerRot.x, cornerRot.y, cornerRot.z);
+          discMesh.updateWorldMatrix();
+
+          discs = discs.filter((d) => d.id !== config.cornerId);
+          discs.push({
+            id: config.cornerId,
+            type: "corner",
+            face: config.location,
+            radius: config.radius,
+            firstDimension: config.firstDimension,
+            secondDimension: config.secondDimension,
+          });
+
+          brushes = brushes.filter(
+            (item) => item.userData.id !== config.cornerId
+          );
+
+          if (config.firstDimension > 0 && config.secondDimension > 0) {
+            brushes.push(discMesh);
+            updateCSG();
+          }
+        }
+
+        function editCorner(cornerId, options = {}) {
+          addCorner(cornerId, { ...options });
+        }
+
+        function deleteCorner(cornerId) {
+          discs = discs.filter((d) => d.id !== cornerId);
+          brushes = brushes.filter((b) => b.userData.id !== cornerId);
+
+          updateCSG();
+        }
+
         // Return public API
         return {
           init: init,
@@ -1625,6 +1865,9 @@
           addMitreCut: addMitreCut,
           editMitreCut: editMitreCut,
           deleteMitreCut: deleteMitreCut,
+          addCorner: addCorner,
+          editCorner: editCorner,
+          deleteCorner: deleteCorner,
         };
       })();
 
@@ -1982,6 +2225,123 @@
             BoxModel.editMitreCut(mitreCutId, {
               location: mitreLocation,
               angle: (mitreAngle * Math.PI) / 180,
+            });
+          }
+        });
+      });
+
+      const cornerContainer = document.getElementById("corners-container");
+
+      function addCorner() {
+        // Generate moulding Id
+        const cornerId =
+          Date.now().toString() + Math.random().toString(36).substr(2, 9);
+
+        // Create a new moulding item
+        const newItem = document.createElement("div");
+        newItem.classList.add("corner-item");
+        newItem.dataset.cornerId = cornerId; // Unique ID
+
+        newItem.innerHTML = `
+            <div class="input-group mb-2">
+              <select class="form-select corner-location" id="corner-location">
+                <option value="">Corner</option>
+                <option value="top-left">Top Left Corner</option>
+                <option value="top-right">Top Right Corner</option>
+                <option value="bottom-left">Bottom Left Corner</option>
+                <option value="bottom-right">Bottom Right Corner</option>
+
+                <option value="front-left">Front Left Corner</option>
+                <option value="front-right">Front Right Corner</option>
+                <option value="back-left">Back Left Corner</option>
+                <option value="back-right">Back Right Corner</option>
+
+                <option value="top-front">Top Front Corner</option>
+                <option value="top-back">Top Back Corner</option>
+                <option value="bottom-front">Bottom Front Corner</option>
+                <option value="bottom-back">Bottom Back Corner</option>
+              </select>
+              <input
+                type="number"
+                placeholder="First Dimension"
+                class="corner-first-dimension form-control"
+              />
+              <input
+                type="number"
+                placeholder="Second Dimension"
+                class="corner-second-dimension form-control"
+              />
+              <input
+                type="number"
+                placeholder="Radius"
+                min="0"
+                max="100"
+                class="corner-radius form-control"
+              />
+              <button
+                type="button"
+                class="btn btn-danger remove-corner"
+                id="delete-corner-btn"
+              >
+                Delete
+              </button>
+            </div>
+      `;
+
+        // Append new item to container
+        cornerContainer.appendChild(newItem);
+
+        const defaultValues = {
+          location: "top-left",
+          radius: 0,
+          firstDimension: 0,
+          secondDimension: 0,
+        };
+
+        BoxModel.addCorner(cornerId, defaultValues);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        document.getElementById("add-corner-btn").onclick = () => addCorner();
+
+        cornerContainer.addEventListener("click", (e) => {
+          if (e.target.closest(".remove-corner")) {
+            const item = e.target.closest(".corner-item");
+            const cornerId = item.dataset.cornerId;
+
+            BoxModel.deleteCorner(cornerId);
+
+            item.remove();
+          }
+        });
+
+        cornerContainer.addEventListener("change", (e) => {
+          if (
+            [
+              "corner-location",
+              "corner-first-dimension",
+              "corner-second-dimension",
+              "corner-radius",
+            ].some((cls) => e.target.classList.contains(cls))
+          ) {
+            const item = e.target.closest(".corner-item");
+
+            const cornerId = item.dataset.cornerId;
+            const cornerLocation =
+              item.querySelector(".corner-location")?.value;
+            const cornerFirstDimension = item.querySelector(
+              ".corner-first-dimension"
+            )?.value;
+            const cornerSecondDimension = item.querySelector(
+              ".corner-second-dimension"
+            )?.value;
+            const cornerRadius = item.querySelector(".corner-radius")?.value;
+
+            BoxModel.editCorner(cornerId, {
+              location: cornerLocation,
+              radius: parseFloat(cornerRadius),
+              firstDimension: parseFloat(cornerFirstDimension),
+              secondDimension: parseFloat(cornerSecondDimension),
             });
           }
         });
