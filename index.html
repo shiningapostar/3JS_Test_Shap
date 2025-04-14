@@ -546,6 +546,7 @@
               const newMaterial = new THREE.MeshStandardMaterial({
                 map: texture,
               });
+              newMaterial.map.userData.texturePath = texturePath;
               materials[faceIndex] = newMaterial;
 
               if (resultObject && resultObject.material) {
@@ -820,12 +821,21 @@
 
         // Function to check if a brush overlaps with the cube (implement accordingly based on the structure of your brush and cube objects)
         function checkBrushOverlap(brush, cube) {
-          // Create bounding boxes for brush and cube
-          const brushBox = new THREE.Box3().setFromObject(brush);
-          const cubeBox = new THREE.Box3().setFromObject(cube);
+          const positionArray = brush.geometry.attributes.position.array;
 
-          // Check if the bounding boxes intersect
-          return brushBox.intersectsBox(cubeBox);
+          const containsNaN = Array.from(positionArray).some((value) =>
+            Number.isNaN(value)
+          );
+
+          if (containsNaN) {
+            console.warn("Position array contains NaN!");
+            // handle or fix it here
+          } else {
+            // Create bounding boxes for brush and cube
+            const brushBox = new THREE.Box3().setFromObject(brush);
+            const cubeBox = new THREE.Box3().setFromObject(cube);
+            return brushBox.intersectsBox(cubeBox);
+          }
         }
 
         // Function to create a shape from an array of points
@@ -1641,6 +1651,7 @@
             firstDimension: 0,
             secondDimension: 0,
             delta: 20,
+            material: "top",
           };
 
           const config = {
@@ -1800,9 +1811,36 @@
             extrudeSettings
           );
 
-          const discMaterial = new THREE.MeshStandardMaterial({
-            color: 0xff00ff,
-          });
+          let discMaterial = new THREE.MeshStandardMaterial();
+
+          let cornerTexture;
+          const faceIndex = faceKeyToIndex[config.material];
+
+          if (faceIndex >= 0) {
+            console.log(materials[faceIndex].clone());
+            discMaterial = materials[faceIndex].clone();
+            if (materials[faceIndex].clone().map !== null) {
+              const textureLoader = new THREE.TextureLoader();
+              cornerTexture = textureLoader.load(
+                materials[faceIndex].clone().map.userData.texturePath
+              );
+
+              cornerTexture.wrapS = THREE.RepeatWrapping;
+              cornerTexture.wrapT = THREE.RepeatWrapping;
+              cornerTexture.repeat.set(
+                1 /
+                  Math.sqrt(
+                    config.firstDimension * config.firstDimension +
+                      config.secondDimension * config.secondDimension
+                  ),
+                1 / cornerDepth
+              );
+
+              discMaterial = new THREE.MeshStandardMaterial({
+                map: cornerTexture,
+              });
+            }
+          }
 
           const discMesh = new threeBvhCsg.Brush(discGeometry, discMaterial);
           discMesh.userData.id = config.cornerId;
@@ -2281,6 +2319,9 @@
                 max="100"
                 class="corner-radius form-control"
               />
+              <select class="form-select corner-material" id="corner-material">
+                <option value="">Material</option>
+              </select>
               <button
                 type="button"
                 class="btn btn-danger remove-corner"
@@ -2299,6 +2340,7 @@
           radius: 0,
           firstDimension: 0,
           secondDimension: 0,
+          material: "",
         };
 
         BoxModel.addCorner(cornerId, defaultValues);
@@ -2325,6 +2367,7 @@
               "corner-first-dimension",
               "corner-second-dimension",
               "corner-radius",
+              "corner-material",
             ].some((cls) => e.target.classList.contains(cls))
           ) {
             const item = e.target.closest(".corner-item");
@@ -2339,13 +2382,54 @@
               ".corner-second-dimension"
             )?.value;
             const cornerRadius = item.querySelector(".corner-radius")?.value;
+            const cornerMat = item.querySelector(".corner-material")?.value;
+
+            if (e.target.classList.contains("corner-location")) {
+              const materialSelect = item.querySelector(".corner-material");
+
+              const locationToMaterials = {
+                "top-left": ["top", "left"],
+                "top-right": ["top", "right"],
+                "bottom-left": ["bottom", "left"],
+                "bottom-right": ["bottom", "right"],
+                "front-left": ["front", "left"],
+                "front-right": ["front", "right"],
+                "back-left": ["back", "left"],
+                "back-right": ["back", "right"],
+                "top-front": ["top", "front"],
+                "top-back": ["top", "back"],
+                "bottom-front": ["bottom", "front"],
+                "bottom-back": ["bottom", "back"],
+              };
+
+              const materials = locationToMaterials[cornerLocation] || [];
+
+              // Clear existing options
+              materialSelect.innerHTML = "";
+
+              const option = document.createElement("option");
+              option.textContent = "Material";
+              materialSelect.appendChild(option);
+
+              // Populate new options
+              materials.forEach((material) => {
+                const option = document.createElement("option");
+                option.value = material;
+                option.textContent = capitalize(material) + " Edge";
+                materialSelect.appendChild(option);
+              });
+            }
 
             BoxModel.editCorner(cornerId, {
               location: cornerLocation,
               radius: parseFloat(cornerRadius),
               firstDimension: parseFloat(cornerFirstDimension),
               secondDimension: parseFloat(cornerSecondDimension),
+              material: cornerMat,
             });
+          }
+          function capitalize(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
           }
         });
       });
