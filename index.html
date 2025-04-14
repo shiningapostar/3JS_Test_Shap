@@ -512,6 +512,7 @@
                   firstDimension: item.firstDimension,
                   secondDimension: item.secondDimension,
                   radius: item.radius,
+                  material: item.material,
                 })
               );
           }
@@ -558,6 +559,12 @@
                   addLabelsToBox();
                 }
               }
+
+              // Update csg meshes
+              updateCSGMeshes("moulding");
+              updateCSGMeshes("bevelCut");
+              updateCSGMeshes("mitreCut");
+              updateCSGMeshes("corner");
 
               renderer.render(scene, camera);
 
@@ -1816,14 +1823,17 @@
           let cornerTexture;
           const faceIndex = faceKeyToIndex[config.material];
 
+          console.log(config.material);
+
           if (faceIndex >= 0) {
-            console.log(materials[faceIndex].clone());
             discMaterial = materials[faceIndex].clone();
             if (materials[faceIndex].clone().map !== null) {
               const textureLoader = new THREE.TextureLoader();
               cornerTexture = textureLoader.load(
                 materials[faceIndex].clone().map.userData.texturePath
               );
+
+              console.log(cornerTexture);
 
               cornerTexture.wrapS = THREE.RepeatWrapping;
               cornerTexture.wrapT = THREE.RepeatWrapping;
@@ -1856,6 +1866,7 @@
             radius: config.radius,
             firstDimension: config.firstDimension,
             secondDimension: config.secondDimension,
+            material: config.material,
           });
 
           brushes = brushes.filter(
